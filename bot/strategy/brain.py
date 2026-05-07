@@ -2,7 +2,7 @@
 Strategy brain — main decision engine with priority-based action selection.
 Implements the game-loop.md priority chain for high win rate.
 
-v1.5.2 changes:
+v1.6.0 changes:
 - Guardians now ATTACK player agents directly (hostile combatants)
 - Curse is TEMPORARILY DISABLED (no whisper Q&A flow)
 - Free room: 5 guardians (reduced from 30), each drops 120 sMoltz
@@ -103,7 +103,7 @@ _map_knowledge: dict = {"revealed": False, "death_zones": set(), "safe_center": 
 
 def _resolve_region(entry, view: dict):
     """Resolve a connectedRegions entry to a full region object.
-    Per v1.5.2 gotchas.md §3: entries are EITHER full Region objects
+    Per v1.6.0 gotchas.md §3: entries are EITHER full Region objects
     (when adjacent region is within vision) OR bare string IDs (when out-of-vision).
     Returns the full object, or None if out-of-vision.
     """
@@ -138,10 +138,10 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     """
     Main decision engine. Returns action dict or None (wait).
 
-    Priority chain per game-loop.md §3 (v1.5.2):
+    Priority chain per game-loop.md §3 (v1.6.0):
     1. DEATHZONE ESCAPE (overrides everything — 1.34 HP/sec!)
     1b. Pre-escape pending death zone
-    2. [DISABLED] Curse resolution — curse temporarily disabled in v1.5.2
+    2. [DISABLED] Curse resolution — curse temporarily disabled in v1.6.0
     2b. Guardian threat evasion (guardians now attack players!)
     3. Critical healing
     3b. Use utility items (Map, Energy Drink)
@@ -201,7 +201,7 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
 
     # ── Build FULL danger map (DZ + pending DZ) ───────────────────
     # Used by ALL movement decisions to NEVER move into danger.
-    # v1.5.2: pendingDeathzones entries are {id, name} objects
+    # v1.6.0: pendingDeathzones entries are {id, name} objects
     danger_ids = set()
     for dz in pending_dz:
         if isinstance(dz, dict):
@@ -237,12 +237,12 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
             return {"action": "move", "data": {"regionId": safe},
                     "reason": "PRE-ESCAPE: Region becoming death zone soon"}
 
-    # ── Priority 2: Curse resolution — DISABLED in v1.5.2 ─────────
+    # ── Priority 2: Curse resolution — DISABLED in v1.6.0 ─────────
     # Curse is temporarily disabled. Guardians no longer curse players.
     # Legacy code kept inert — will re-enable when curse returns.
     # (was: _check_curse → whisper answer to guardian)
 
-    # ── Priority 2b: Guardian threat evasion (v1.5.2) ─────────────
+    # ── Priority 2b: Guardian threat evasion (v1.6.0) ─────────────
     # Guardians now ATTACK player agents directly! Flee if low HP.
     guardians_here = [a for a in visible_agents
                       if a.get("isGuardian", False) and a.get("isAlive", True)
@@ -300,7 +300,7 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
             return {"action": "use_item", "data": {"itemId": energy_drink["id"]},
                     "reason": "EP RECOVERY: EP=0, using energy drink (+5 EP)"}
 
-    # ── Priority 5: Guardian farming (v1.5.2: 120 sMoltz per kill!) ─
+    # ── Priority 5: Guardian farming (v1.6.0: 120 sMoltz per kill!) ─
     # Only 5 guardians per free room — each worth 120 sMoltz!
     # Guardians now ATTACK back — only fight if we can win.
     guardians = [a for a in visible_agents
@@ -309,7 +309,7 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
         target = _select_weakest(guardians)
         w_range = get_weapon_range(equipped)
         if _is_in_range(target, region_id, w_range, connections):
-            # v1.5.2: guardians fight back — check if we can take them
+            # v1.6.0: guardians fight back — check if we can take them
             my_dmg = calc_damage(atk, get_weapon_bonus(equipped),
                                 target.get("def", 5), region_weather)
             guardian_dmg = calc_damage(target.get("atk", 10),
@@ -413,17 +413,17 @@ def _estimate_enemy_weapon_bonus(agent: dict) -> int:
 _known_agents: dict = {}
 
 
-# ── CURSE HANDLING — DISABLED in v1.5.2 ───────────────────────────────
-# Curse is temporarily disabled per strategy.md v1.5.2.
+# ── CURSE HANDLING — DISABLED in v1.6.0 ───────────────────────────────
+# Curse is temporarily disabled per strategy.md v1.6.0.
 # Guardians no longer set victim EP to 0 and no whisper-question/answer flow.
 # Legacy code kept below for reference — will re-enable when curse returns.
 #
 # def _check_curse(messages, my_id) -> dict | None:
-#     """DISABLED: Guardian curse is temporarily disabled in v1.5.2."""
+#     """DISABLED: Guardian curse is temporarily disabled in v1.6.0."""
 #     return None
 #
 # def _solve_curse_question(question) -> str:
-#     """DISABLED: Guardian curse is temporarily disabled in v1.5.2."""
+#     """DISABLED: Guardian curse is temporarily disabled in v1.6.0."""
 #     return ""
 
 
@@ -534,7 +534,7 @@ def _check_equip(inventory: list, equipped) -> dict | None:
 
 def _find_safe_region(connections, danger_ids: set, view: dict = None) -> str | None:
     """Find nearest connected region that's NOT a death zone AND NOT pending DZ.
-    Per v1.5.2 gotchas.md §3: connectedRegions entries are EITHER full Region objects
+    Per v1.6.0 gotchas.md §3: connectedRegions entries are EITHER full Region objects
     (when visible) OR bare string IDs (when out-of-vision). Use _resolve_region().
     danger_ids = set of all DZ + pending DZ region IDs.
     """
@@ -812,7 +812,7 @@ def _choose_move_target(connections, danger_ids: set,
     candidates.sort(key=lambda x: x[1], reverse=True)
     return candidates[0][0]
 """
-View fields from api-summary.md (all implemented above — v1.5.2):
+View fields from api-summary.md (all implemented above — v1.6.0):
 ✅ self          — hp, ep, atk, def, inventory, equippedWeapon, isAlive
 ✅ currentRegion — id, name, terrain, weather, connections, interactables, isDeathZone
 ✅ connectedRegions — full Region objects OR bare string IDs (type-safe via _resolve_region)
@@ -823,6 +823,6 @@ View fields from api-summary.md (all implemented above — v1.5.2):
 ✅ visibleItems    — pickup + movement attraction scoring
 ✅ pendingDeathzones — {id, name} entries for death zone escape + movement planning
 ✅ recentLogs      — available for analysis
-✅ recentMessages  — communication (curse disabled in v1.5.2)
+✅ recentMessages  — communication (curse disabled in v1.6.0)
 ✅ aliveCount      — adaptive aggression (late game adjustment)
 """

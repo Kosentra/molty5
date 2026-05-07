@@ -27,7 +27,7 @@ log = get_logger(__name__)
 def _update_dz_knowledge(view: dict):
     """Continuously track death zones from every agent_view.
     Updates brain._map_knowledge with any new DZ regions observed.
-    v1.5.2: pendingDeathzones entries are {id, name} objects.
+    v1.6.0: pendingDeathzones entries are {id, name} objects.
     """
     from bot.strategy.brain import _map_knowledge
     # Track DZ from visible regions
@@ -49,7 +49,7 @@ def _update_dz_knowledge(view: dict):
         rid = cur.get("id", "")
         if rid:
             _map_knowledge["death_zones"].add(rid)
-    # Track pending DZ — v1.5.2: entries are {id, name} objects
+    # Track pending DZ — v1.6.0: entries are {id, name} objects
     for dz in view.get("pendingDeathzones", []):
         if isinstance(dz, dict):
             rid = dz.get("id", "")

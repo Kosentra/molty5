@@ -3,7 +3,7 @@ ERC-8004 Identity Registry on-chain calls.
 register() from Owner EOA → returns tokenId → POST /api/identity.
 Uses PoA-enabled Web3 provider.
 
-v1.5.2: Gas is DELEGATED for all ERC-8004 operations (relayed by Tx delegator).
+v1.6.0: Gas is DELEGATED for all ERC-8004 operations (relayed by Tx delegator).
 The agent MUST NOT ask the owner to fund CROSS gas for identity registration.
 We still set gasLimit manually to prevent ethers from failing on estimation.
 """
@@ -22,7 +22,7 @@ async def register_identity_onchain(owner_private_key: str) -> int | None:
     Call register() on ERC-8004 Identity Registry from Owner EOA.
     Returns tokenId (= agentId) or None if failed (no crash).
 
-    v1.5.2: Gas is delegated — no gas balance check needed.
+    v1.6.0: Gas is delegated — no gas balance check needed.
     If a gas-related error occurs, treat as client-side problem (e.g. missing gasLimit),
     never escalate to the owner as a funding request.
     """

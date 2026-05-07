@@ -14,6 +14,7 @@ SKILL_VERSION = "1.6.0"
 # ── URLs ──────────────────────────────────────────────────────────────
 API_BASE = "https://cdn.moltyroyale.com/api"
 WS_URL = "wss://cdn.moltyroyale.com/ws/agent"
+WS_JOIN_URL = "wss://cdn.moltyroyale.com/ws/join"  # v1.6.0: unified join socket
 
 # ── Chain config (CROSS Mainnet) ──────────────────────────────────────
 CROSS_CHAIN_ID = 612055

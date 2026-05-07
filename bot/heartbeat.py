@@ -192,28 +192,37 @@ class Heartbeat:
         log.info("✅ Full setup complete!")
 
     async def _handle_ready(self, me: dict, state: str):
-        """Join a game based on room selection."""
+        """Join a game using v1.6.0 unified /ws/join socket.
+        Per skill.md Core Rule 1: one socket handles both join + gameplay.
+        """
+        from bot.game.ws_join import JoinEngine
+
         room_type = select_room(me)
+        log.info("═══ JOINING GAME via /ws/join: type=%s ═══", room_type)
 
-        try:
-            if room_type == "paid":
-                game_id, agent_id = await join_paid_game(self.api)
-            else:
-                game_id, agent_id = await join_free_game(self.api)
-        except APIError as e:
-            if e.code == "NO_IDENTITY":
-                log.error("Identity required. Will setup next cycle.")
-                return
-            log.warning("Join failed: %s. Retrying in 10s.", e)
-            await asyncio.sleep(10)
-            return
-        except RuntimeError as e:
-            log.warning("Join failed: %s. Retrying in 10s.", e)
-            await asyncio.sleep(10)
-            return
+        # Feed dashboard
+        dashboard_state.update_agent(self._agent_key, {
+            "name": self._agent_name,
+            "status": "joining",
+            "room_name": f"{room_type} room",
+        })
+        dashboard_state.add_log(f"Joining {room_type} room via /ws/join...", "info",
+                                self._agent_key)
 
-        # Successfully joined → play
-        await self._play_game(game_id, agent_id, room_type)
+        # Set temp memory
+        self.memory.set_temp_game("joining")
+        await self.memory.save()
+
+        # Run unified join + gameplay engine (v1.6.0)
+        engine = JoinEngine(entry_type=room_type)
+        engine.dashboard_key = self._agent_key
+        engine.dashboard_name = self._agent_name
+        game_result = await engine.run()
+
+        # Settle game result
+        await settle_game(game_result, room_type, self.memory)
+        log.info("Game complete. Starting next cycle in 5s...")
+        await asyncio.sleep(5)
 
     async def _handle_in_game(self, ctx: dict):
         """Resume or start playing an active game.

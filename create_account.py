@@ -16,7 +16,7 @@ BOT_NAME = "Namabot"
 AGENT_WALLET_ADDRESS = ""  # contoh: "0x86C7e97400..."
 
 API_URL = "https://cdn.moltyroyale.com/api"
-SKILL_VERSION = "1.6.0"
+SKILL_VERSION = "1.6.1"
 # ─────────────────────────────────────────────────────────────────────────────
 
 payload = {"name": BOT_NAME}

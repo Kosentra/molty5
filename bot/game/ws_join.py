@@ -1,7 +1,7 @@
 """
-WebSocket Join Engine — v1.6.0 unified /ws/join socket.
+WebSocket Join Engine — v1.6.1 unified /ws/join socket.
 
-Per skill.md Core Rule 1 (v1.6.0):
+Per skill.md Core Rule 1 (v1.6.1):
   Open wss://cdn.moltyroyale.com/ws/join → read 'welcome' frame →
   send 'hello' frame → same socket becomes gameplay socket automatically.
   Do NOT re-dial to /ws/agent for new games.
@@ -32,7 +32,7 @@ log = get_logger(__name__)
 
 class JoinEngine:
     """
-    Unified join + gameplay engine via /ws/join (v1.6.0).
+    Unified join + gameplay engine via /ws/join (v1.6.1).
     One socket handles matchmaking queue AND full gameplay.
     """
 

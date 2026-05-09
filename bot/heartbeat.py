@@ -192,7 +192,7 @@ class Heartbeat:
         log.info("✅ Full setup complete!")
 
     async def _handle_ready(self, me: dict, state: str):
-        """Join a game using v1.6.0 unified /ws/join socket.
+        """Join a game using v1.6.1 unified /ws/join socket.
         Per skill.md Core Rule 1: one socket handles both join + gameplay.
         """
         from bot.game.ws_join import JoinEngine
@@ -213,7 +213,7 @@ class Heartbeat:
         self.memory.set_temp_game("joining")
         await self.memory.save()
 
-        # Run unified join + gameplay engine (v1.6.0)
+        # Run unified join + gameplay engine (v1.6.1)
         engine = JoinEngine(entry_type=room_type)
         engine.dashboard_key = self._agent_key
         engine.dashboard_name = self._agent_name

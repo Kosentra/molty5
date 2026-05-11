@@ -37,7 +37,7 @@ def determine_state(me_response: dict) -> tuple[str, dict]:
             }
 
     # Check ERC-8004 identity
-    erc8004_id = readiness.get("erc8004Id")
+    erc8004_id = me_response.get("erc8004Id")
     if erc8004_id is None:
         log.info("No ERC-8004 identity registered")
         return NO_IDENTITY, {}

@@ -161,6 +161,7 @@ async def approve_whitelist_onchain(
 
         if target is None:
             # No pending request for OUR agent — try to trigger it on-chain
+            agent_eoa_short = agent_eoa[:12] + "..."
             log.info("No pending request for agent %s on-chain. Attempting to trigger it...", agent_eoa_short)
             
             from bot.credentials import get_agent_private_key

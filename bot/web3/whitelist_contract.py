@@ -19,6 +19,7 @@ async def get_molty_wallet_address(owner_eoa: str) -> str | None:
     """Resolve MoltyRoyaleWallet address from WalletFactory.getWallets(). Returns None on failure."""
     try:
         w3 = get_w3()
+        # Check current factory first
         factory = w3.eth.contract(
             address=Web3.to_checksum_address(WALLET_FACTORY),
             abi=WALLET_FACTORY_ABI,
@@ -27,13 +28,29 @@ async def get_molty_wallet_address(owner_eoa: str) -> str | None:
             Web3.to_checksum_address(owner_eoa)
         ).call()
 
-        if not wallets:
-            log.info("No MoltyRoyaleWallet found for owner=%s", owner_eoa)
-            return None
+        if wallets:
+            wallet_addr = wallets[0]
+            log.info("Resolved MoltyRoyaleWallet: %s", wallet_addr)
+            return wallet_addr
 
-        wallet_addr = wallets[0]
-        log.info("Resolved MoltyRoyaleWallet: %s", wallet_addr)
-        return wallet_addr
+        # Fallback to legacy factory
+        from bot.config import WALLET_FACTORY_LEGACY
+        log.info("No wallet in current factory, checking legacy factory...")
+        legacy_factory = w3.eth.contract(
+            address=Web3.to_checksum_address(WALLET_FACTORY_LEGACY),
+            abi=WALLET_FACTORY_ABI,
+        )
+        legacy_wallets = legacy_factory.functions.getWallets(
+            Web3.to_checksum_address(owner_eoa)
+        ).call()
+
+        if legacy_wallets:
+            wallet_addr = legacy_wallets[0]
+            log.info("Resolved MoltyRoyaleWallet (LEGACY): %s", wallet_addr)
+            return wallet_addr
+
+        log.info("No MoltyRoyaleWallet found for owner=%s in any factory", owner_eoa)
+        return None
     except Exception as e:
         log.warning("Failed to resolve MoltyRoyaleWallet: %s", e)
         return None
@@ -58,6 +75,38 @@ async def verify_whitelist(owner_eoa: str, agent_eoa: str) -> bool:
         return is_wl
     except Exception as e:
         log.warning("Whitelist verification error: %s", e)
+        return False
+
+
+async def request_whitelist_onchain(agent_private_key: str, wallet_addr: str) -> bool:
+    """Call requestAddWhitelist() on the SC wallet from the Agent EOA."""
+    try:
+        w3 = get_w3()
+        acct = Account.from_key(agent_private_key)
+        wallet_contract = w3.eth.contract(
+            address=Web3.to_checksum_address(wallet_addr),
+            abi=MOLTY_WALLET_ABI,
+        )
+        
+        log.info("Sending on-chain requestAddWhitelist from agent %s...", acct.address[:12])
+        tx = wallet_contract.functions.requestAddWhitelist().build_transaction({
+            "from": acct.address,
+            "nonce": w3.eth.get_transaction_count(acct.address),
+            "gas": 150000,
+            "chainId": CROSS_CHAIN_ID,
+        })
+        signed = w3.eth.account.sign_transaction(tx, agent_private_key)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+        
+        if receipt.status == 1:
+            log.info("✅ On-chain requestAddWhitelist successful: %s", tx_hash.hex())
+            return True
+        else:
+            log.error("On-chain requestAddWhitelist failed: %s", tx_hash.hex())
+            return False
+    except Exception as e:
+        log.error("Failed to send on-chain whitelist request: %s", e)
         return False
 
 
@@ -111,23 +160,30 @@ async def approve_whitelist_onchain(
                 break
 
         if target is None:
-            # No pending request for OUR agent — could be already approved or pending for someone else
-            agent_eoa_short = agent_eoa[:12] + "..."
-            if pending:
-                other_agents = [req[0] for req in pending]
-                log.info(
-                    "No pending request for agent %s, but found %d other pending requests: %s",
-                    agent_eoa_short, len(pending), other_agents
-                )
-            else:
-                log.info("No pending whitelist requests found at all for agent %s", agent_eoa_short)
-
-            # Double-check on-chain whitelist in case it was already approved
-            if await verify_whitelist(owner_eoa, agent_eoa):
-                return "ALREADY_APPROVED"
+            # No pending request for OUR agent — try to trigger it on-chain
+            log.info("No pending request for agent %s on-chain. Attempting to trigger it...", agent_eoa_short)
             
-            log.warning("Agent %s not in whitelist and no pending request found on-chain.", agent_eoa_short)
-            return None
+            from bot.credentials import get_agent_private_key
+            agent_pk = get_agent_private_key()
+            if not agent_pk:
+                log.error("Cannot trigger whitelist request — no Agent private key available")
+                return None
+                
+            ok = await request_whitelist_onchain(agent_pk, wallet_addr)
+            if not ok:
+                return None
+                
+            # Retry fetching pending
+            log.info("Retrying fetch pending whitelist requests...")
+            pending = wallet_contract.functions.getRequestedAddWhitelists().call()
+            for req in pending:
+                if req[0].lower() == agent_eoa_lower:
+                    target = req
+                    break
+            
+            if target is None:
+                log.warning("Agent %s still not found in pending requests after on-chain call.", agent_eoa_short)
+                return None
 
         requestor = target[0]
         agent_id = target[1]

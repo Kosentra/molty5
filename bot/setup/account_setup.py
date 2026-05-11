@@ -235,12 +235,35 @@ async def ensure_account_ready() -> dict:
     Returns credentials dict with api_key.
     """
     if is_first_run():
-        return await run_first_run_intake()
+        creds = await run_first_run_intake()
+    else:
+        creds = load_credentials()
+        if not creds or not creds.get("api_key"):
+            log.warning("Credentials file exists but no api_key. Re-running intake.")
+            creds = await run_first_run_intake()
 
-    creds = load_credentials()
     if not creds or not creds.get("api_key"):
-        log.warning("Credentials file exists but no api_key. Re-running intake.")
-        return await run_first_run_intake()
+        return creds
 
     log.info("Returning run: account=%s", creds.get("agent_name", "unknown"))
+
+    # v1.6.1: Sync agent wallet address to account
+    # This ensures API calls (like whitelist_request) target the correct agent.
+    try:
+        api = MoltyAPI(creds["api_key"])
+        me = await api.get_accounts_me()
+        
+        local_addr = creds.get("agent_wallet_address", "").lower()
+        remote_addr = (me.get("walletAddress") or "").lower()
+        
+        if local_addr and remote_addr != local_addr:
+            log.info("Syncing agent wallet to account: %s -> %s", remote_addr[:10], local_addr[:10])
+            await api.put_wallet(creds["agent_wallet_address"])
+            log.info("✅ Agent wallet synchronized")
+            
+    except Exception as e:
+        log.warning("Account sync failed: %s", e)
+    finally:
+        await api.close()
+
     return creds

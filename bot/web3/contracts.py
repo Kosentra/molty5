@@ -70,6 +70,13 @@ MOLTY_WALLET_ABI = [
         "inputs": [],
         "outputs": [{"name": "", "type": "address[]"}],
     },
+    {
+        "name": "requestAddWhitelist",
+        "type": "function",
+        "stateMutability": "nonpayable",
+        "inputs": [],
+        "outputs": [],
+    },
 ]
 
 # ── ERC-20 (Moltz) ───────────────────────────────────────────────────

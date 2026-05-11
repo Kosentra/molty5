@@ -137,7 +137,20 @@ async def request_whitelist_onchain(agent_private_key: str, wallet_addr: str) ->
             log.info("✅ On-chain requestAddWhitelist successful: %s", tx_hash.hex())
             return True
         else:
-            log.error("On-chain requestAddWhitelist failed: %s", tx_hash.hex())
+            # Try to get revert reason
+            try:
+                tx_data = w3.eth.get_transaction(tx_hash)
+                w3.eth.call({
+                    'to': tx_data['to'],
+                    'from': tx_data['from'],
+                    'value': tx_data['value'],
+                    'data': tx_data['input'],
+                    'gas': tx_data['gas'],
+                    'gasPrice': tx_data['gasPrice']
+                }, receipt.blockNumber - 1)
+                log.error("On-chain requestAddWhitelist failed: %s (No reason found)", tx_hash.hex())
+            except Exception as re:
+                log.error("On-chain requestAddWhitelist REVERTED: %s", re)
             return False
     except Exception as e:
         log.error("Failed to send on-chain whitelist request: %s", e)

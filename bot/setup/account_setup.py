@@ -54,8 +54,12 @@ def _restore_from_env() -> dict | None:
     owner_addr = os.getenv("OWNER_EOA", "")
     agent_name = os.getenv("AGENT_NAME", "")
 
-    if not api_key or not agent_pk:
-        return None  # No env credentials — truly first run
+    if not agent_pk:
+        return None  # Truly first run (no agent key provided)
+
+    if not api_key:
+        log.info("  Agent key found but no API key. Proceeding to registration with existing wallet.")
+        return None # Proceed to registration step below, but we'll use this key
 
     log.info("♻️ Restoring credentials from Railway Variables (env vars)...")
 
@@ -119,22 +123,38 @@ async def run_first_run_intake() -> dict:
     if len(agent_name) > 50:
         agent_name = agent_name[:50]
 
-    # Step 2: Generate Agent EOA (never ask the owner — setup.md)
-    log.info("Generating Agent EOA...")
-    agent_address, agent_pk = generate_agent_wallet()
+    # Step 2: Agent EOA (Check env first, then generate)
+    env_agent_pk = os.getenv("AGENT_PRIVATE_KEY", "")
+    env_agent_addr = os.getenv("AGENT_WALLET_ADDRESS", "")
+    
+    if env_agent_pk and env_agent_addr:
+        log.info("Using existing Agent EOA from environment: %s", env_agent_addr[:12] + "...")
+        agent_address, agent_pk = env_agent_addr, env_agent_pk
+    else:
+        log.info("Generating NEW Agent EOA...")
+        agent_address, agent_pk = generate_agent_wallet()
+        update_env_file("AGENT_WALLET_ADDRESS", agent_address)
+        update_env_file("AGENT_PRIVATE_KEY", agent_pk)
+    
     save_agent_wallet(agent_address, agent_pk)
-    update_env_file("AGENT_WALLET_ADDRESS", agent_address)
-    update_env_file("AGENT_PRIVATE_KEY", agent_pk)
 
     # Step 3: Owner EOA
     owner_address = ""
     owner_pk = ""
     if ADVANCED_MODE:
-        log.info("Advanced mode: Generating Owner EOA...")
-        owner_address, owner_pk = generate_owner_wallet()
+        env_owner_pk = os.getenv("OWNER_PRIVATE_KEY", "")
+        env_owner_addr = os.getenv("OWNER_EOA", "")
+        
+        if env_owner_pk and env_owner_addr:
+            log.info("Using existing Owner EOA from environment: %s", env_owner_addr[:12] + "...")
+            owner_address, owner_pk = env_owner_addr, env_owner_pk
+        else:
+            log.info("Advanced mode: Generating NEW Owner EOA...")
+            owner_address, owner_pk = generate_owner_wallet()
+            update_env_file("OWNER_EOA", owner_address)
+            update_env_file("OWNER_PRIVATE_KEY", owner_pk)
+        
         save_owner_wallet(owner_address, owner_pk)
-        update_env_file("OWNER_EOA", owner_address)
-        update_env_file("OWNER_PRIVATE_KEY", owner_pk)
         log.info(
             "Owner EOA generated: %s\n"
             "  → Private key stored at: dev-agent/owner-wallet.json\n"

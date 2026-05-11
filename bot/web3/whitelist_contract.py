@@ -109,7 +109,7 @@ async def request_whitelist_onchain(agent_private_key: str, wallet_addr: str) ->
                         'chainId': w3.eth.chain_id
                     }
                     signed_fund = w3.eth.account.sign_transaction(fund_tx, owner_pk)
-                    fund_hash = w3.eth.send_raw_transaction(signed_fund.rawTransaction)
+                    fund_hash = w3.eth.send_raw_transaction(getattr(signed_fund, 'raw_transaction', getattr(signed_fund, 'rawTransaction', None)))
                     log.info("Funding Agent EOA... Tx: %s", fund_hash.hex())
                     w3.eth.wait_for_transaction_receipt(fund_hash, timeout=60)
                 except Exception as fe:
@@ -127,7 +127,8 @@ async def request_whitelist_onchain(agent_private_key: str, wallet_addr: str) ->
         })
         
         signed_tx = w3.eth.account.sign_transaction(tx, agent_private_key)
-        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        # Using raw_transaction (snake_case) for compatibility with newer web3.py
+        tx_hash = w3.eth.send_raw_transaction(getattr(signed_tx, 'raw_transaction', getattr(signed_tx, 'rawTransaction', None)))
         
         log.info("Whitelist request sent: %s", tx_hash.hex())
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
@@ -235,7 +236,8 @@ async def approve_whitelist_onchain(
         })
 
         signed = w3.eth.account.sign_transaction(tx, owner_private_key)
-        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        # Using getattr for broad compatibility with different web3.py versions
+        tx_hash = w3.eth.send_raw_transaction(getattr(signed, 'raw_transaction', getattr(signed, 'rawTransaction', None)))
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
 
         if receipt.status != 1:

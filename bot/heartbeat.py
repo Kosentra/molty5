@@ -234,7 +234,9 @@ class Heartbeat:
         entry_type = ctx.get("entry_type", "free")
 
         if not ctx.get("is_alive", True):
-            log.info("Agent is dead in game %s. Connecting WS to wait for game_ended.", game_id)
+            log.info("Agent is dead in game %s. Waiting for game to finish on server...", game_id)
+            await asyncio.sleep(60)
+            return
 
         await self._play_game(game_id, agent_id, entry_type)
 

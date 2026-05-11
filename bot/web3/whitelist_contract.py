@@ -83,20 +83,53 @@ async def request_whitelist_onchain(agent_private_key: str, wallet_addr: str) ->
     try:
         w3 = get_w3()
         acct = Account.from_key(agent_private_key)
+        agent_address = acct.address
         wallet_contract = w3.eth.contract(
             address=Web3.to_checksum_address(wallet_addr),
             abi=MOLTY_WALLET_ABI,
         )
         
-        log.info("Sending on-chain requestAddWhitelist from agent %s...", acct.address[:12])
+        # Step 1: Check gas for Agent
+        balance = w3.eth.get_balance(agent_address)
+        if balance < Web3.to_wei(0.01, 'ether'):
+            log.warning("Agent EOA has low gas (%s CROSS). Attempting to fund from Owner...", Web3.from_wei(balance, 'ether'))
+            
+            from bot.web3.gas_checker import get_owner_credentials
+            owner_pk, owner_addr = get_owner_credentials()
+            
+            if owner_pk:
+                try:
+                    # Send 0.05 CROSS from Owner to Agent
+                    fund_tx = {
+                        'to': agent_address,
+                        'value': Web3.to_wei(0.05, 'ether'),
+                        'gas': 21000,
+                        'gasPrice': w3.eth.gas_price,
+                        'nonce': w3.eth.get_transaction_count(owner_addr),
+                        'chainId': w3.eth.chain_id
+                    }
+                    signed_fund = w3.eth.account.sign_transaction(fund_tx, owner_pk)
+                    fund_hash = w3.eth.send_raw_transaction(signed_fund.rawTransaction)
+                    log.info("Funding Agent EOA... Tx: %s", fund_hash.hex())
+                    w3.eth.wait_for_transaction_receipt(fund_hash, timeout=60)
+                except Exception as fe:
+                    log.error("Failed to fund Agent EOA: %s", fe)
+                    return False
+
+        # Step 2: Send transaction
+        log.info("Sending on-chain requestAddWhitelist from agent %s...", agent_address[:12])
         tx = wallet_contract.functions.requestAddWhitelist().build_transaction({
-            "from": acct.address,
-            "nonce": w3.eth.get_transaction_count(acct.address),
-            "gas": 150000,
-            "chainId": CROSS_CHAIN_ID,
+            'from': agent_address,
+            'nonce': w3.eth.get_transaction_count(agent_address),
+            'gas': 300000, # Increased gas limit
+            'gasPrice': w3.eth.gas_price,
+            'chainId': w3.eth.chain_id
         })
-        signed = w3.eth.account.sign_transaction(tx, agent_private_key)
-        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        
+        signed_tx = w3.eth.account.sign_transaction(tx, agent_private_key)
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        
+        log.info("Whitelist request sent: %s", tx_hash.hex())
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
         
         if receipt.status == 1:

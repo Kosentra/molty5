@@ -99,10 +99,10 @@ async def request_whitelist_onchain(agent_private_key: str, wallet_addr: str) ->
             
             if owner_pk:
                 try:
-                    # Send 0.05 CROSS from Owner to Agent
+                    # Send 0.01 CROSS from Owner to Agent
                     fund_tx = {
                         'to': agent_address,
-                        'value': Web3.to_wei(0.05, 'ether'),
+                        'value': Web3.to_wei(0.01, 'ether'),
                         'gas': 21000,
                         'gasPrice': w3.eth.gas_price,
                         'nonce': w3.eth.get_transaction_count(owner_addr),

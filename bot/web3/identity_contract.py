@@ -45,7 +45,8 @@ async def register_identity_onchain(owner_private_key: str) -> int | None:
         })
 
         signed = w3.eth.account.sign_transaction(tx, owner_private_key)
-        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        # Using getattr for broad compatibility with different web3.py versions
+        tx_hash = w3.eth.send_raw_transaction(getattr(signed, 'raw_transaction', getattr(signed, 'rawTransaction', None)))
         receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
 
         if receipt.status != 1:

@@ -18,6 +18,15 @@ async def ensure_whitelist(api: MoltyAPI, owner_eoa: str, agent_eoa: str) -> boo
     Request whitelist + auto-approve if advanced mode.
     Returns True if whitelisted. Never crashes.
     """
+    # Step 0: Check API readiness flags first
+    try:
+        me = await api.get_account_me()
+        if me.get('readiness', {}).get('whitelistApproved'):
+            log.info("✅ API reports Whitelist already approved — skipping on-chain checks")
+            return True
+    except:
+        pass
+
     # Step 1: Submit whitelist request
     already_whitelisted = False
     try:

@@ -83,7 +83,8 @@ class WebSocketEngine:
         """
         api_key = get_api_key()
         headers = {
-            "Authorization": f"mr-auth {api_key}",
+            "X-API-Key": api_key,
+            "Authorization": f"mr-auth {api_key}",  # Keep for backward compatibility
             "X-Version": SKILL_VERSION,
         }
 

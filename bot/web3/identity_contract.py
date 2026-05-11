@@ -12,6 +12,7 @@ from eth_account import Account
 from bot.config import IDENTITY_REGISTRY, CROSS_CHAIN_ID
 from bot.web3.contracts import IDENTITY_ABI
 from bot.web3.provider import get_w3
+from bot.web3.gas_checker import require_gas_or_wait_async
 from bot.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -21,12 +22,13 @@ async def register_identity_onchain(owner_private_key: str) -> int | None:
     """
     Call register() on ERC-8004 Identity Registry from Owner EOA.
     Returns tokenId (= agentId) or None if failed (no crash).
-
-    v1.6.0: Gas is delegated — no gas balance check needed.
-    If a gas-related error occurs, treat as client-side problem (e.g. missing gasLimit),
-    never escalate to the owner as a funding request.
     """
     acct = Account.from_key(owner_private_key)
+
+    # Gas check FIRST — wait until funded
+    has_gas = await require_gas_or_wait_async(acct.address, "ERC-8004 Identity Registration")
+    if not has_gas:
+        return None
 
     try:
         w3 = get_w3()
@@ -35,8 +37,6 @@ async def register_identity_onchain(owner_private_key: str) -> int | None:
             abi=IDENTITY_ABI,
         )
 
-        # Gas is delegated (relayed by Tx delegator), but we still set gasLimit
-        # manually to prevent ethers from failing early on revert estimation.
         tx = registry.functions.register().build_transaction({
             "from": acct.address,
             "nonce": w3.eth.get_transaction_count(acct.address),
@@ -63,6 +63,6 @@ async def register_identity_onchain(owner_private_key: str) -> int | None:
         return None
 
     except Exception as e:
-        log.error("ERC-8004 register() error (gas is delegated — this is a client-side issue): %s", e)
+        log.error("ERC-8004 register() error: %s", e)
         return None
 

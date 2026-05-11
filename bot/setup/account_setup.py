@@ -58,8 +58,21 @@ def _restore_from_env() -> dict | None:
         return None  # Truly first run (no agent key provided)
 
     if not api_key:
-        log.info("  Agent key found but no API key. Proceeding to registration with existing wallet.")
-        return None # Proceed to registration step below, but we'll use this key
+        log.warning(
+            "\n"
+            "═══════════════════════════════════════════════════════════════\n"
+            "  ⚠️  RAILWAY RESTART DETECTED — MISSING API_KEY\n"
+            "  \n"
+            "  Agent wallet keys were found in environment, but API_KEY is missing.\n"
+            "  The local credentials.json was likely lost during restart.\n"
+            "  \n"
+            "  → Please find your API Key (starts with 'mr_live_')\n"
+            "  → Add it to Railway Variables as: API_KEY\n"
+            "═══════════════════════════════════════════════════════════════\n"
+        )
+        # We can't return creds without API key, so we return None to let it try registration
+        # (which will likely fail with CONFLICT, giving us another chance to warn)
+        return None 
 
     log.info("♻️ Restoring credentials from Railway Variables (env vars)...")
 
@@ -183,8 +196,31 @@ async def run_first_run_intake() -> dict:
         result = await api.create_account(agent_name, agent_address)
     except APIError as e:
         if e.code == "CONFLICT":
-            log.warning("Wallet already registered. Loading existing credentials.")
-            return load_credentials() or {}
+            creds = load_credentials()
+            if creds and creds.get("api_key"):
+                log.warning("Wallet already registered. Loading existing credentials.")
+                return creds
+            else:
+                log.error(
+                    "\n"
+                    "═══════════════════════════════════════════════════════════════\n"
+                    "  ❌ REGISTRATION FAILED: WALLET ALREADY REGISTERED\n"
+                    "  \n"
+                    "  This agent wallet (%s) is already in use, but the bot\n"
+                    "  does not have the API Key for it.\n"
+                    "  \n"
+                    "  If you are on Railway:\n"
+                    "  1. Check your previous deployment logs for the 'apiKey'\n"
+                    "  2. OR log into https://www.moltyroyale.com to find it\n"
+                    "  3. Add it to Railway Variables as: API_KEY\n"
+                    "  \n"
+                    "  If you want a fresh start, change AGENT_PRIVATE_KEY\n"
+                    "  to a new value (or remove it to auto-generate).\n"
+                    "═══════════════════════════════════════════════════════════════\n",
+                    agent_address
+                )
+                # Return empty dict to trigger retry loop in heartbeat
+                return {}
         raise
     finally:
         await api.close()

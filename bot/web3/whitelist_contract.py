@@ -111,16 +111,22 @@ async def approve_whitelist_onchain(
                 break
 
         if target is None:
-            # No pending request — could be already approved via server-side
-            log.info(
-                "No pending whitelist request for agent %s. "
-                "This may mean it was auto-approved by the server or already processed.",
-                agent_eoa[:12] + "..."
-            )
-            # Double-check on-chain whitelist in case API approved it
+            # No pending request for OUR agent — could be already approved or pending for someone else
+            agent_eoa_short = agent_eoa[:12] + "..."
+            if pending:
+                other_agents = [req[0] for req in pending]
+                log.info(
+                    "No pending request for agent %s, but found %d other pending requests: %s",
+                    agent_eoa_short, len(pending), other_agents
+                )
+            else:
+                log.info("No pending whitelist requests found at all for agent %s", agent_eoa_short)
+
+            # Double-check on-chain whitelist in case it was already approved
             if await verify_whitelist(owner_eoa, agent_eoa):
                 return "ALREADY_APPROVED"
-            log.warning("Agent not in whitelist and no pending request. Will retry.")
+            
+            log.warning("Agent %s not in whitelist and no pending request found on-chain.", agent_eoa_short)
             return None
 
         requestor = target[0]

@@ -2,10 +2,10 @@
 Strategy brain — main decision engine with priority-based action selection.
 Implements the game-loop.md priority chain for high win rate.
 
-v1.6.0 changes:
+v1.6.1 changes:
 - Guardians now ATTACK player agents directly (hostile combatants)
 - Curse is TEMPORARILY DISABLED (no whisper Q&A flow)
-- Free room: 5 guardians (reduced from 30), each drops 120 sMoltz
+- Free room: 5 guardians (reduced from 30), each drops 120 sMoltz (v1.6.1)
 - connectedRegions: either full Region objects OR bare string IDs — type-check!
 - pendingDeathzones: entries are {id, name} objects
 
@@ -812,7 +812,7 @@ def _choose_move_target(connections, danger_ids: set,
     candidates.sort(key=lambda x: x[1], reverse=True)
     return candidates[0][0]
 """
-View fields from api-summary.md (all implemented above — v1.6.0):
+View fields from api-summary.md (all implemented above — v1.6.1):
 ✅ self          — hp, ep, atk, def, inventory, equippedWeapon, isAlive
 ✅ currentRegion — id, name, terrain, weather, connections, interactables, isDeathZone
 ✅ connectedRegions — full Region objects OR bare string IDs (type-safe via _resolve_region)

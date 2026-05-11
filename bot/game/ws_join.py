@@ -60,7 +60,7 @@ class JoinEngine:
         """
         api_key = get_api_key()
         headers = {
-            "X-API-Key": api_key,
+            "Authorization": f"mr-auth {api_key}",
             "X-Version": SKILL_VERSION,
         }
 

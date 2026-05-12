@@ -20,7 +20,8 @@ async def ensure_whitelist(api: MoltyAPI, owner_eoa: str, agent_eoa: str) -> boo
     """
     # Step 0: Check API readiness flags first
     try:
-        me = await api.get_account_me()
+        me = await api.get_accounts_me()
+
         if me.get('readiness', {}).get('whitelistApproved'):
             log.info("✅ API reports Whitelist already approved — skipping on-chain checks")
             return True

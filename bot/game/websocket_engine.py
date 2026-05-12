@@ -176,7 +176,8 @@ class WebSocketEngine:
                 
                 # Mark facility as used if this was an interact action
                 if hasattr(self, "_last_action_sent") and self._last_action_sent.get("type") == "interact":
-                    fac_id = self._last_action_sent.get("data", {}).get("interactableId")
+                    fac_id = self._last_action_sent.get("interactableId")
+
                     if fac_id:
                         from bot.strategy.brain import mark_facility_used
                         mark_facility_used(fac_id)

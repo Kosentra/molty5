@@ -60,14 +60,31 @@ def _get_item_type(item: dict) -> str:
 def _get_item_category(item: dict) -> str:
     return (item.get("category") or item.get("cat") or item.get("type") or "").lower()
 
-def reset_game_state():
-    global _used_facilities, _survival_state
-    _used_facilities = set()
-    _survival_state = {"last_hp": 100}
-    log.info("Strategy brain reset for new game")
-
+# ── State Tracking ──────────────────────────────────────────────────
 _used_facilities = set()
 _survival_state = {"last_hp": 100}
+_map_knowledge = {"revealed": False, "death_zones": set(), "safe_center": []}
+
+def reset_game_state():
+    global _used_facilities, _survival_state, _map_knowledge
+    _used_facilities = set()
+    _survival_state = {"last_hp": 100}
+    _map_knowledge = {"revealed": False, "death_zones": set(), "safe_center": []}
+    log.info("Strategy brain reset for new game")
+
+def learn_from_map(view: dict):
+    """Process map data to reveal safe regions and death zones."""
+    global _map_knowledge
+    _map_knowledge["revealed"] = True
+    # Logic to extract safe regions from visibleRegions in view
+    for r in view.get("visibleRegions", []):
+        if isinstance(r, dict) and not r.get("isDeathZone"):
+            _map_knowledge["safe_center"].append(r.get("id"))
+
+def mark_facility_used(facility_id: str):
+    """Call this when interaction is successful."""
+    if facility_id:
+        _used_facilities.add(facility_id)
 
 def decide_action(view: dict, can_act: bool) -> dict | None:
     self_data = view.get("self", {})

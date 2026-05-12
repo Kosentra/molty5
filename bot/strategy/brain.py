@@ -304,13 +304,16 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
             return {"action": "use_item", "data": {"itemId": heal["id"]},
                     "reason": f"HEAL: HP={hp}, using {heal.get('typeId', 'heal')}"}
 
-    # ── Priority 4: EP recovery if cursed (EP=0) or very low ──────
-    if ep == 0:
-        # Check for energy drink first
+    # ── Priority 4: EP recovery / Combat Prep ──────
+    # Use Energy Drink if EP is low OR if we are about to engage in combat
+    if ep <= 5:
         energy_drink = _find_energy_drink(inventory)
         if energy_drink:
+            # If targets are nearby, use it to prepare for multiple attacks/moves
+            targets_nearby = len(guardians) > 0 or len(enemies) > 0 or len(monsters) > 0
+            reason = "COMBAT PREP: Restoring EP for aggression" if targets_nearby else "EP RECOVERY: EP low"
             return {"action": "use_item", "data": {"itemId": energy_drink["id"]},
-                    "reason": "EP RECOVERY: EP=0, using energy drink (+5 EP)"}
+                    "reason": f"{reason} (+5 EP)"}
 
     # ── Priority 5: Guardian farming (v1.6.0: 120 sMoltz per kill!) ─
     # Only 5 guardians per free room — each worth 120 sMoltz!
@@ -700,12 +703,16 @@ def _use_utility_item(inventory: list, hp: int, ep: int, alive_count: int) -> di
     for item in inventory:
         if not isinstance(item, dict):
             continue
-        type_id = item.get("typeId", "").lower()
+        type_id = _get_item_type(item)
         # Map: use immediately to reveal entire map
         if type_id == "map":
             log.info("🗺️ Using Map! Will reveal entire map for strategic learning.")
             return {"action": "use_item", "data": {"itemId": item["id"]},
                     "reason": "UTILITY: Using Map — reveals entire map for DZ tracking"}
+        # Megaphone: use immediately for broadcast
+        if type_id == "megaphone":
+            return {"action": "broadcast", "data": {"message": f"Agent {AGENT_NAME} is hunting..."},
+                    "reason": "UTILITY: Using Megaphone — psychological warfare"}
     return None
 
 

@@ -430,7 +430,7 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     # Use connectedRegions — NEVER move into DZ or pending DZ!
     if ep >= move_ep_cost and connections:
         move_target = _choose_move_target(connections, danger_ids, visible_items,
-                                           region_id, ep, view)
+                                           region_id, ep, alive_count, view)
         if move_target:
             return {"action": "move", "data": {"regionId": move_target},
                     "reason": f"EXPLORE: Moving toward {move_target[:8]}"}
@@ -822,9 +822,9 @@ def learn_from_map(view: dict):
              _map_knowledge["safe_center"][:3])
 
 
-def _choose_move_target(connections, danger_ids: set,
-                         current_region: dict, visible_items: list,
-                         alive_count: int) -> str | None:
+def _choose_move_target(connections, danger_ids: set, visible_items: list,
+                         region_id: str, ep: int, alive_count: int,
+                         view: dict) -> str | None:
     """Choose best region to move to.
     CRITICAL: NEVER move into a death zone or pending death zone!
     """
@@ -845,10 +845,11 @@ def _choose_move_target(connections, danger_ids: set,
 
     # Add attraction for weak targets in adjacent regions
     target_regions = set()
+    current_region_id = region_id # Use the passed region_id
     for agent in view.get("visibleAgents", []):
         if isinstance(agent, dict) and agent.get("isAlive", True):
             arid = agent.get("regionId", "")
-            if arid and arid != current_region.get("id"):
+            if arid and arid != current_region_id:
                 a_hp = agent.get("hp", 100)
                 if a_hp < 40 or agent.get("isGuardian"):
                     target_regions.add((arid, 12))  # Chase weak players or any guardian

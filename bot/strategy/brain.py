@@ -211,6 +211,14 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     if not is_alive:
         return None  # Dead — wait for game_ended
 
+    # ── Target Lists (pre-calculate for all priorities) ───────────
+    guardians = [a for a in visible_agents
+                 if a.get("isGuardian", False) and a.get("isAlive", True)]
+    enemies = [a for a in visible_agents
+               if not a.get("isGuardian", False) and a.get("isAlive", True)
+               and a.get("id") != self_data.get("id")]
+    monsters = [m for m in visible_monsters if m.get("hp", 0) > 0]
+
     # ── Build FULL danger map (DZ + pending DZ) ───────────────────
     # Used by ALL movement decisions to NEVER move into danger.
     # v1.6.0: pendingDeathzones entries are {id, name} objects
@@ -320,8 +328,6 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     # ── Priority 5: Guardian farming (v1.6.0: 120 sMoltz per kill!) ─
     # Only 5 guardians per free room — each worth 120 sMoltz!
     # Guardians now ATTACK back — only fight if we can win.
-    guardians = [a for a in visible_agents
-                 if a.get("isGuardian", False) and a.get("isAlive", True)]
     if guardians and ep >= 2 and hp >= 35:
         target = _select_weakest(guardians)
         w_range = get_weapon_range(equipped)
@@ -344,9 +350,6 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     # ── Priority 6: Favorable agent combat ────────────────────────
     # Be VERY aggressive. Favorable = we are stronger, target is weak, or we have high HP.
     hp_threshold = 35 if alive_count > 15 else 15
-    enemies = [a for a in visible_agents
-               if not a.get("isGuardian", False) and a.get("isAlive", True)
-               and a.get("id") != self_data.get("id")]
     if enemies and ep >= 2 and hp >= hp_threshold:
         target = _select_weakest(enemies)
         w_range = get_weapon_range(equipped)
@@ -356,10 +359,33 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
             enemy_dmg = calc_damage(target.get("atk", 10),
                                      _estimate_enemy_weapon_bonus(target),
                                      defense, region_weather)
-            # Maximum Aggression Combat Logic:
-            # - Always finish off weak targets (HP < my_dmg * 5)
-            # - Fight if we deal similar or slightly less damage (my_dmg >= enemy_dmg - 8)
-            # - Fight if we have enough HP to survive a few hits (hp > 40)
+            # ── Priority 6b: Kiting Logic (Hit & Run) ──────────────
+            # If target is stronger but we have a ranged weapon, keep distance!
+            w_range = get_weapon_range(equipped)
+            enemy_range = _estimate_enemy_weapon_bonus(target) # This is bonus, need range
+            # Mock range for now: 1 for firearms, 0 for melee
+            enemy_w = target.get("equippedWeapon")
+            enemy_w_type = _get_item_type(enemy_w) if enemy_w else ""
+            enemy_real_range = WEAPONS.get(enemy_w_type, {}).get("range", 0)
+
+            # Is this enemy a threat? (they deal more or similar damage)
+            is_threat = enemy_dmg >= my_dmg - 5
+            
+            if is_threat and w_range > enemy_real_range:
+                # We have a range advantage!
+                if target.get("regionId") == region_id:
+                    # Too close! Kite away to an adjacent region
+                    safe = _find_safe_region(connections, danger_ids, view)
+                    if safe and ep >= move_ep_cost:
+                        return {"action": "move", "data": {"regionId": safe},
+                                "reason": f"KITE: Enemy {target.get('name','?')} is strong melee, moving to range"}
+                elif _is_in_range(target, region_id, w_range, connections):
+                    # In our range but out of their range (or they are melee)
+                    return {"action": "attack",
+                            "data": {"targetId": target["id"], "targetType": "agent"},
+                            "reason": f"REAP: Kiting {target.get('name','?')} from distance (HP={target.get('hp','?')})"}
+
+            # Standard Maximum Aggression Combat Logic:
             if my_dmg >= enemy_dmg - 8 or hp > 40 or target.get("hp", 100) <= my_dmg * 5:
                 return {"action": "attack",
                         "data": {"targetId": target["id"], "targetType": "agent"},
@@ -367,7 +393,6 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
                                   f"dmg={my_dmg} vs enemy_dmg={enemy_dmg}"}
 
     # ── Priority 7: Monster farming ───────────────────────────────
-    monsters = [m for m in visible_monsters if m.get("hp", 0) > 0]
     if monsters and ep >= 2:
         target = _select_weakest(monsters)
         w_range = get_weapon_range(equipped)

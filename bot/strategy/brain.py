@@ -1,10 +1,10 @@
 """
 Strategy brain — main decision engine with priority-based action selection.
-v1.6.3: Patient Predator Strategy
-- Early Game (Scavenger): Priority on looting, distance, and safety.
-- Late Game (Predator): Aggressive hunting after looting high-tier gear.
-- Weapon Focus: Sniper (Range 2) and Katana (Atk 35) are top priority.
-- Smart Storage: Automatic inventory management for high-value items.
+v1.6.4: Critical HP Recovery & Debugging
+- Emergency Healing: Now top priority (Priority 0).
+- Phase Detection: Scavenger (Early) vs Predator (Late).
+- Defensive Spacing: Early game keeps distance.
+- Detailed Logging: Action reasoning is more verbose.
 """
 import random
 from bot.utils.logger import get_logger
@@ -121,17 +121,24 @@ def decide_action(view: dict, can_act: bool) -> dict | None:
     enemies = [a for a in visible_agents if a.get("isAlive") and a.get("id") != my_id and not a.get("isGuardian")]
     guardians = [a for a in visible_agents if a.get("isAlive") and a.get("isGuardian")]
 
-    # ── Phase Detection ─────────────────────────────────────────
-    # Early Game: High alive count OR weak equipment
-    is_early_game = alive_count > 25
-    has_power_weapon = _get_item_type(equipped) in ["katana", "sniper", "sword"]
-    is_predator_mode = not is_early_game or has_power_weapon or hp > 90
+    # ── Priority 0: EMERGENCY RECOVERY (No Cooldown Check) ────────
+    # Use items if HP is critical
+    if hp < 40:
+        heal = _find_healing_item(inventory, critical=True)
+        if heal and can_act:
+            return {"action": "use_item", "data": {"itemId": heal["id"]}, "reason": f"EMERGENCY: HP is critical ({hp})!"}
 
     # ── Priority 1: Emergency Escape (Death Zone) ─────────────────
     if region.get("isDeathZone") or region_id in danger_ids:
         safe_target = _find_safe_region(connections, danger_ids)
         if safe_target and ep >= move_ep_cost:
             return {"action": "move", "data": {"regionId": safe_target}, "reason": "ESCAPE: DANGER ZONE!"}
+
+    # ── Phase Detection ─────────────────────────────────────────
+    # Early Game: High alive count OR weak equipment
+    is_early_game = alive_count > 25
+    has_power_weapon = _get_item_type(equipped) in ["katana", "sniper", "sword"]
+    is_predator_mode = not is_early_game or has_power_weapon or hp > 85
 
     # ── Priority 2: STRATEGIC AGGRESSION (Kill Stealing / Hunting) ──
     all_targets = guardians + enemies
@@ -141,21 +148,23 @@ def decide_action(view: dict, can_act: bool) -> dict | None:
         if weak:
             target = min(weak, key=lambda t: t.get("hp", 100))
             if _is_in_range(target, region_id, get_weapon_range(equipped), connections):
-                return {"action": "attack", "data": {"targetId": target["id"], "targetType": "agent"},
-                        "reason": f"PREDATOR: Executing weak {target.get('name')} (HP={target.get('hp')})"}
+                if can_act:
+                    return {"action": "attack", "data": {"targetId": target["id"], "targetType": "agent"},
+                            "reason": f"PREDATOR: Executing weak {target.get('name')} (HP={target.get('hp')})"}
 
         # 2b. ACTIVE HUNTING (Only in Predator Mode)
         if is_predator_mode and hp >= AGGRESSION_MIN_HP:
             hunt_targets = guardians if guardians else enemies
             target = min(hunt_targets, key=lambda t: t.get("hp", 100))
             if _is_in_range(target, region_id, get_weapon_range(equipped), connections):
-                 return {"action": "attack", "data": {"targetId": target["id"], "targetType": "agent"},
-                         "reason": f"HUNT: Engaging {target.get('name')} (Mode=Predator)"}
+                if can_act:
+                    return {"action": "attack", "data": {"targetId": target["id"], "targetType": "agent"},
+                            "reason": f"HUNT: Engaging {target.get('name')} (Mode=Predator)"}
         
         # 2c. DEFENSIVE SPACING (Early Game: Keep distance)
         if not is_predator_mode and enemies:
             nearby_melee = [e for e in enemies if e.get("regionId") == region_id]
-            if nearby_melee and ep >= move_ep_cost:
+            if nearby_melee and ep >= move_ep_cost and can_act:
                 safe = _find_safe_region(connections, danger_ids)
                 if safe:
                     return {"action": "move", "data": {"regionId": safe},
@@ -168,22 +177,27 @@ def decide_action(view: dict, can_act: bool) -> dict | None:
     equip = _check_smart_equip(inventory, equipped, all_targets, region_id, connections)
     if equip: return equip
 
-    if not can_act: return None
+    # ── COOLDOWN BLOCK ──────────────────────────────────────────
+    if not can_act:
+        return None
 
-    # ── Priority 4: MAINTENANCE ───────────────────────────────────
+    # ── Priority 4: NORMAL MAINTENANCE ────────────────────────────
     if hp < 75:
-        heal = _find_healing_item(inventory, hp < 35)
+        heal = _find_healing_item(inventory, hp < 40)
         if heal: return {"action": "use_item", "data": {"itemId": heal["id"]}, "reason": f"HEAL: HP={hp}"}
     
-    if ep <= 2:
+    if ep <= 3:
         drink = next((i for i in inventory if _get_item_type(i) == "energy_drink"), None)
         if drink: return {"action": "use_item", "data": {"itemId": drink["id"]}, "reason": "STAMINA: EP low"}
 
     # ── Priority 5: STRATEGIC MOVEMENT ────────────────────────────
     if ep >= move_ep_cost:
-        move_target = _choose_move_target(connections, danger_ids, visible_items, region_id)
+        # If HP is low but no heal item, MUST move to find one
+        is_desperate = hp < 40
+        move_target = _choose_move_target(connections, danger_ids, visible_items, region_id, desperate=is_desperate)
         if move_target:
-            return {"action": "move", "data": {"regionId": move_target}, "reason": f"EXPLORE: To {move_target[:8]}"}
+            return {"action": "move", "data": {"regionId": move_target}, 
+                    "reason": f"EXPLORE: To {move_target[:8]} (HP={hp})"}
 
     # ── Priority 6: BANKING (Rest) ────────────────────────────────
     if ep < max_ep:
@@ -238,9 +252,31 @@ def _find_healing_item(inventory, critical) -> dict | None:
     heals.sort(key=lambda i: RECOVERY_ITEMS[_get_item_type(i)], reverse=critical)
     return heals[0]
 
-def _choose_move_target(connections, danger_ids, items, my_region) -> str | None:
+def _choose_move_target(connections, danger_ids, items, my_region, desperate=False) -> str | None:
+    # 1. Toward healing items if desperate
+    if desperate:
+        for item in items:
+            t = _get_item_type(item)
+            if t in RECOVERY_ITEMS and RECOVERY_ITEMS[t] > 0:
+                rid = item.get("regionId")
+                if rid and rid != my_region and rid not in danger_ids: return rid
+    
+    # 2. Toward high value items
     for item in items:
         rid = item.get("regionId")
         if rid and rid != my_region and rid not in danger_ids: return rid
-    safe = [c if isinstance(c, str) else c.get("id") for c in connections if (c if isinstance(c, str) else c.get("id")) not in danger_ids]
-    return random.choice(safe) if safe else None
+    
+    # 3. Random safe (favor Hills/Plains over River/Water)
+    safe = []
+    for c in connections:
+        rid = c if isinstance(c, str) else c.get("id")
+        if rid not in danger_ids:
+            # Score terrains (simplified)
+            terrain = c.get("terrain", "plains") if isinstance(c, dict) else "plains"
+            score = 10 if terrain in ["hills", "plains"] else 1
+            safe.append((rid, score))
+    
+    if safe:
+        safe.sort(key=lambda x: x[1], reverse=True)
+        return safe[0][0]
+    return None

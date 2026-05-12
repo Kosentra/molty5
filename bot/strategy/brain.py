@@ -177,6 +177,13 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     is_alive = self_data.get("isAlive", True)
     inventory = self_data.get("inventory", [])
     equipped = self_data.get("equippedWeapon")
+    
+    # ── Survival Context (v1.6.1) ────────────────────────────────
+    # Check if we are taking "unexplained" damage (not from a known fight)
+    # This helps escape hazards not flagged as isDeathZone.
+    last_hp = getattr(self, "_last_hp", hp)
+    taking_damage = hp < last_hp
+    setattr(self, "_last_hp", hp)
 
     # View-level fields per api-summary.md
     visible_agents = view.get("visibleAgents", [])
@@ -240,22 +247,23 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     # ── Priority 1: DEATHZONE ESCAPE (overrides everything) ───────
     # Per game-systems.md: 1.34 HP/sec damage — bot dies fast!
     move_ep_cost = _get_move_ep_cost(region_terrain, region_weather)
-    if region.get("isDeathZone", False):
+    
+    # Force escape if in DZ, pending DZ, OR taking damage
+    in_danger = region.get("isDeathZone", False) or region_id in danger_ids or taking_damage
+    
+    if in_danger:
         safe = _find_safe_region(connections, danger_ids, view)
-        if safe and ep >= move_ep_cost:
-            log.warning("🚨 IN DEATH ZONE! Escaping to %s (HP=%d)", safe, hp)
-            return {"action": "move", "data": {"regionId": safe},
-                    "reason": f"ESCAPE: In death zone! HP={hp} dropping fast (1.34/sec)"}
-        elif not safe:
-            log.error("🚨 IN DEATH ZONE but NO SAFE REGION! All neighbors are DZ!")
+        if not safe and connections:
+            # DESPERATE MOVE: No safe region found, but we are dying!
+            # Just move to ANY neighbor instead of standing still.
+            first_conn = connections[0]
+            safe = first_conn.get("id") if isinstance(first_conn, dict) else first_conn
+            log.warning("🚨 NO SAFE REGION! Desperate move to %s", safe)
 
-    # ── Priority 1b: Pre-escape pending death zone ────────────────
-    if region_id in danger_ids:
-        safe = _find_safe_region(connections, danger_ids, view)
         if safe and ep >= move_ep_cost:
-            log.warning("⚠️ Region %s becoming DZ soon! Escaping to %s", region_id[:8], safe)
+            reason = "ESCAPE: In Death Zone!" if not taking_damage else "ESCAPE: Taking damage!"
             return {"action": "move", "data": {"regionId": safe},
-                    "reason": "PRE-ESCAPE: Region becoming death zone soon"}
+                    "reason": f"{reason} HP={hp} (to {safe[:8]})"}
 
     # ── Priority 2: Curse resolution — DISABLED in v1.6.0 ─────────
     # Curse is temporarily disabled. Guardians no longer curse players.
@@ -419,15 +427,15 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     # ── Priority 9: Strategic movement ────────────────────────────
     # Use connectedRegions — NEVER move into DZ or pending DZ!
     if ep >= move_ep_cost and connections:
-        move_target = _choose_move_target(connections, danger_ids,
-                                           region, visible_items, alive_count)
+        move_target = _choose_move_target(connections, danger_ids, visible_items,
+                                           region_id, ep, view)
         if move_target:
             return {"action": "move", "data": {"regionId": move_target},
-                    "reason": "EXPLORE: Moving to better position"}
+                    "reason": f"EXPLORE: Moving toward {move_target[:8]}"}
 
-    # ── Priority 10: Rest (EP < 4 and safe) ───────────────────────
-    # Allow rest if EP is low, as long as we're not in a death zone.
-    if ep < 4 and not region.get("isDeathZone") and region_id not in danger_ids:
+    # ── Priority 10: Rest ─────────────────────────────────────────
+    # If we have nothing else to do, rest to full EP (if safe)
+    if ep < max_ep and not region.get("isDeathZone") and region_id not in danger_ids:
         return {"action": "rest", "data": {},
                 "reason": f"REST: EP={ep}/{max_ep} (+1 bonus EP)"}
 

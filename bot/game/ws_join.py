@@ -19,7 +19,8 @@ For RESUME (already in game): use websocket_engine.py → /ws/agent directly.
 import json
 import asyncio
 import websockets
-from bot.config import WS_JOIN_URL, SKILL_VERSION
+from bot.config import WS_JOIN_URL, SKILL_VERSION, AGENT_NAME
+
 from bot.credentials import get_api_key
 from bot.game.action_sender import ActionSender, COOLDOWN_ACTIONS
 from bot.strategy.brain import decide_action, reset_game_state, learn_from_map
@@ -49,7 +50,8 @@ class JoinEngine:
         self._joined = False           # True once assigned to a game
         # Dashboard
         self.dashboard_key = "agent-1"
-        self.dashboard_name = "Agent"
+        self.dashboard_name = AGENT_NAME or "Agent"
+
         self.game_id = ""
         self.agent_id = ""
 

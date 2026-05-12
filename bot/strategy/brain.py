@@ -24,6 +24,8 @@ Uses ALL view fields from api-summary.md:
 - aliveCount: remaining alive agents
 """
 from bot.utils.logger import get_logger
+from bot.config import AGENT_NAME
+
 
 log = get_logger(__name__)
 

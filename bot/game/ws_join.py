@@ -351,9 +351,24 @@ class JoinEngine:
                              for i in region_items[:10]],
         })
 
-        # Real-time Global Header Sync
-        dashboard_state.total_moltz = self_data.get("moltz", self_data.get("Moltz", 0))
-        dashboard_state.total_smoltz = self_data.get("smoltz", self_data.get("sMoltz", self_data.get("balance", 0)))
+        # Real-time Global Header Sync (Balance + In-Game loot)
+        inv_smoltz = 0
+        inv_moltz = 0
+        inventory = self_data.get("inventory", [])
+        for item in inventory:
+            if not isinstance(item, dict): continue
+            t_id = (item.get("typeId") or "").lower()
+            if t_id in ["smoltz", "reward1", "reward2", "reward3"]:
+                inv_smoltz += item.get("amount", 1)
+            elif t_id in ["moltz", "gold"]:
+                inv_moltz += item.get("amount", 1)
+
+        # Update global state with (Balance + current game loot)
+        base_smoltz = self_data.get("smoltz", self_data.get("sMoltz", self_data.get("balance", 0)))
+        base_moltz = self_data.get("moltz", self_data.get("Moltz", 0))
+        
+        dashboard_state.total_smoltz = base_smoltz + inv_smoltz
+        dashboard_state.total_moltz = base_moltz + inv_moltz
         dashboard_state.total_cross = self_data.get("cross", self_data.get("Cross", 0))
 
 

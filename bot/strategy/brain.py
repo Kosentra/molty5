@@ -373,7 +373,8 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
             # 1. We survive the trade with > 15 HP safety margin
             # 2. OR we can kill them in 1-2 hits (finish off)
             # 3. OR we have range advantage (Kiting handled in Priority 6, but check here too)
-            if hp > est_damage_taken + 15 or target_hp <= my_dmg * 2:
+            if hp > est_damage_taken + 5 or target_hp <= my_dmg * 2:
+
                 return {"action": "attack",
                         "data": {"targetId": target["id"], "targetType": "agent"},
                         "reason": f"GUARDIAN AGGRO: Winning trade! Takes {int(turns_to_kill)} turns, "
@@ -421,8 +422,9 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
             # 1. We win the trade clearly
             # 2. OR target is weak (finish off)
             # 3. OR it's late game (be desperate)
-            hp_safety = 15 if alive_count > 20 else 5
+            hp_safety = 8 if alive_count > 20 else 2
             if hp > est_damage_taken + hp_safety or target_hp <= my_dmg * 2:
+
                 return {"action": "attack",
                         "data": {"targetId": target["id"], "targetType": "agent"},
                         "reason": f"COMBAT AGGRO: Calculated WIN. est_loss={int(est_damage_taken)} HP, Target={target_hp}"}
@@ -457,7 +459,8 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     # Use connectedRegions — NEVER move into DZ or pending DZ!
     if ep >= move_ep_cost and connections:
         move_target = _choose_move_target(connections, danger_ids, visible_items,
-                                           region_id, ep, alive_count, view)
+                                           region_id, hp, ep, alive_count, view)
+
         if move_target:
             return {"action": "move", "data": {"regionId": move_target},
                     "reason": f"EXPLORE: Moving toward {move_target[:8]}"}
@@ -866,8 +869,9 @@ def learn_from_map(view: dict):
 
 
 def _choose_move_target(connections, danger_ids: set, visible_items: list,
-                         region_id: str, ep: int, alive_count: int,
+                         region_id: str, hp: int, ep: int, alive_count: int,
                          view: dict) -> str | None:
+
     """Choose best region to move to.
     CRITICAL: NEVER move into a death zone or pending death zone!
     """

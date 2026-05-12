@@ -20,9 +20,21 @@ async def settle_game(game_result: dict, entry_type: str, memory: AgentMemory):
     is_winner = result.get("isWinner", False)
     final_rank = result.get("finalRank", 0)
     kills = result.get("kills", 0)
+    # Robust reward extraction (handles varying server casing/field names)
     rewards = result.get("rewards", {})
-    smoltz_earned = rewards.get("sMoltz", 0)
-    moltz_earned = rewards.get("moltz", 0)
+    if not isinstance(rewards, dict):
+        rewards = {}
+        
+    # Check multiple possible keys for sMoltz and Moltz
+    smoltz_earned = (
+        rewards.get("sMoltz") or rewards.get("smoltz") or 
+        rewards.get("balance") or result.get("smoltz") or 
+        result.get("sMoltz") or 0
+    )
+    moltz_earned = (
+        rewards.get("moltz") or rewards.get("Moltz") or 
+        result.get("moltz") or result.get("Moltz") or 0
+    )
 
     log.info("═══ GAME SETTLEMENT ═══")
     log.info("  Winner: %s | Rank: %d | Kills: %d", "YES" if is_winner else "No", final_rank, kills)

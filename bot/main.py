@@ -28,6 +28,9 @@ def main():
     async def run_all():
         # Start dashboard server (non-blocking)
         await start_dashboard(port=DASHBOARD_PORT)
+        
+        # Start Telegram log forwarder background task
+        tg_notifier.start_log_forwarder()
         # Run heartbeat (main bot loop — runs forever)
         await tg_notifier.send_message("🚀 <b>Bot Online!</b>\nStarting command center...")
         await heartbeat.run()

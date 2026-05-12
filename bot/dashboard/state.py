@@ -5,6 +5,7 @@ Bot writes → Dashboard reads. Thread-safe via asyncio lock.
 import time
 from collections import deque
 from bot.utils.logger import get_logger
+from bot.utils.telegram import tg_notifier
 
 log = get_logger(__name__)
 
@@ -71,6 +72,9 @@ class DashboardState:
         self.global_logs.append(entry)
         if agent_id and agent_id in self.agent_logs:
             self.agent_logs[agent_id].append(entry)
+        
+        # Forward to Telegram (batching handled in tg_notifier)
+        tg_notifier.enqueue_log(message)
 
     def set_account(self, account_data: dict):
         """Add or update account."""

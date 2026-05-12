@@ -49,13 +49,14 @@ ITEM_PRIORITY = {
     "rewards": 300, "moltz": 300, "smoltz": 300,  # ALWAYS pickup first
     "reward1": 300, "reward2": 300, "reward3": 300, # Variations
     "gold": 300, "credits": 300, "balance": 300,   # Alternative names
-    "katana": 100, "sniper": 95, "sword": 90, "pistol": 85,
+    "katana": 250, "sniper": 240, "sword": 90, "pistol": 85,
     "dagger": 80, "bow": 75,
-    "medkit": 70, "bandage": 65, "emergency_food": 60, "energy_drink": 58,
-    "binoculars": 55,  # Passive: vision +1 permanent, always pickup
-    "map": 52,          # Use immediately to reveal entire map
+    "medkit": 180, "bandage": 120, "emergency_food": 60, "energy_drink": 58,
+    "binoculars": 55,
+    "map": 52,
     "megaphone": 40,
 }
+
 
 # ── Recovery items for healing (combat-items.md) ──────────────────────
 # For normal healing (HP<70): prefer Emergency Food (save Bandage/Medkit)
@@ -330,16 +331,26 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     # ── Priority 3: Healing management ─────────────────────────────
     # HP < 30 = CRITICAL: use Bandage first (30 HP), then Medkit (50 HP)
     # HP < 70 = MODERATE: use Emergency Food first (20 HP), save better items
+    # HP < 30 = CRITICAL
+    # HP < 85 AND enemy nearby = PREEMPTIVE HEAL (War mode)
+    # HP < 70 = MODERATE
+    enemy_nearby = len(enemies) > 0 or len(guardians) > 0
     if hp < 30:
         heal = _find_healing_item(inventory, critical=True)
         if heal:
             return {"action": "use_item", "data": {"itemId": heal["id"]},
                     "reason": f"CRITICAL HEAL: HP={hp}, using {heal.get('typeId', 'heal')}"}
+    elif hp < 85 and enemy_nearby:
+        heal = _find_healing_item(inventory, critical=True) # Use best heal for war
+        if heal:
+            return {"action": "use_item", "data": {"itemId": heal["id"]},
+                    "reason": f"WAR HEAL: HP={hp}, enemy nearby! Using {heal.get('typeId', 'heal')}"}
     elif hp < 70:
         heal = _find_healing_item(inventory, critical=False)
         if heal:
             return {"action": "use_item", "data": {"itemId": heal["id"]},
                     "reason": f"HEAL: HP={hp}, using {heal.get('typeId', 'heal')}"}
+
 
     # ── Priority 4: EP recovery / Combat Prep ──────
     # Use Energy Drink if EP is low OR if we are about to engage in combat
@@ -887,13 +898,16 @@ def _choose_move_target(connections, danger_ids: set, visible_items: list,
                 cat = _get_item_category(item)
                 # Stronger attraction for rewards, weapons, and high-tier recovery
                 if type_id in ["rewards", "moltz", "smoltz"] or cat == "currency":
-                    item_regions.add((rid, 25)) # Very strong pull
+                    item_regions.add((rid, 40)) # Very strong pull
+                elif type_id in ["katana", "sniper"]:
+                    item_regions.add((rid, 35)) # High tier weapon pull
                 elif cat == "weapon":
-                    item_regions.add((rid, 15)) # Strong pull for weapons
-                elif type_id in ["medkit", "energy_drink"]:
-                    item_regions.add((rid, 12))
+                    item_regions.add((rid, 20)) # Normal weapon pull
+                elif type_id in ["medkit"]:
+                    item_regions.add((rid, 25)) # Strong pull for medkit
                 else:
-                    item_regions.add((rid, 8))
+                    item_regions.add((rid, 10))
+
 
     # Add attraction for weak targets in adjacent regions
     target_regions = set()

@@ -21,6 +21,12 @@ class TelegramNotifier:
         self.base_url = f"https://api.telegram.org/bot{self.token}"
         self._log_queue = asyncio.Queue()
         self._forwarder_task = None
+        self._polling_task = None
+
+    def start_all(self):
+        """Start both log forwarding and command polling."""
+        self.start_log_forwarder()
+        self.start_polling()
 
     def start_log_forwarder(self):
         """Start background task to forward logs from queue."""
@@ -89,6 +95,99 @@ class TelegramNotifier:
                     log.warning("Telegram send failed: %s", resp.text)
         except Exception as e:
             log.error("Telegram error: %s", e)
+
+    def start_polling(self):
+        """Start background task to listen for commands."""
+        if self.enabled and self._polling_task is None:
+            self._polling_task = asyncio.create_task(self._poll_loop())
+            log.info("Telegram command listener started.")
+
+    async def _poll_loop(self):
+        """Long poll for incoming messages from Telegram."""
+        offset = 0
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            while True:
+                try:
+                    url = f"{self.base_url}/getUpdates"
+                    params = {"offset": offset, "timeout": 20}
+                    resp = await client.get(url, params=params)
+                    if resp.status_code == 200:
+                        updates = resp.json().get("result", [])
+                        for update in updates:
+                            offset = update["update_id"] + 1
+                            if "message" in update:
+                                await self._handle_command(update["message"])
+                    elif resp.status_code == 401:
+                        log.error("Telegram Token invalid! Stopping listener.")
+                        break
+                    await asyncio.sleep(1) # Grace period
+                except Exception as e:
+                    log.debug("Telegram polling retry: %s", e)
+                    await asyncio.sleep(5)
+
+    async def _handle_command(self, msg: dict):
+        """Parse and respond to user commands."""
+        raw_text = msg.get("text", "")
+        if not raw_text.startswith("/"):
+            return
+            
+        text = raw_text.lower().split("@")[0] # Remove bot handle if present
+        chat_id = msg.get("chat", {}).get("id")
+        
+        # Security: Only respond to the authorized chat ID
+        if str(chat_id) != str(self.chat_id):
+            log.warning("Unauthorized command from chat_id %s", chat_id)
+            return
+
+        from bot.dashboard.state import dashboard_state
+        
+        if text.startswith("/start"):
+            welcome = (
+                "👋 <b>Halo Komandan!</b>\n"
+                "Saya adalah Molty Predator Bot. Gunakan perintah berikut:\n\n"
+                "/status - Cek kondisi HP, EP, dan Kills\n"
+                "/logs - Lihat 10 log aktivitas terakhir\n"
+                "/dashboard - Link akses dashboard web\n"
+                "/ping - Cek apakah bot merespon"
+            )
+            await self.send_message(welcome)
+            
+        elif text.startswith("/status"):
+            snap = dashboard_state.get_snapshot()
+            agents = snap.get("agents", {})
+            if not agents:
+                await self.send_message("❌ Belum ada agent yang terdeteksi aktif.")
+                return
+            
+            summary = "<b>📊 Status Operasional:</b>\n\n"
+            for aid, data in agents.items():
+                status_emoji = "🎮" if data.get("status") == "playing" else "💤"
+                summary += (f"{status_emoji} <b>{data.get('name')}</b>\n"
+                            f"  ❤️ HP: {data.get('hp')}/{data.get('maxHp')}\n"
+                            f"  ⚡ EP: {data.get('ep')}/{data.get('maxEp')}\n"
+                            f"  🎯 Kills: {data.get('kills')}\n"
+                            f"  📍 Region: {data.get('region')}\n"
+                            f"  🕒 Bal: {data.get('smoltz', 0)} sMoltz\n"
+                            f"  📝 Last: <i>{data.get('last_action')}</i>\n\n")
+            await self.send_message(summary)
+
+        elif text.startswith("/logs"):
+            logs = list(dashboard_state.global_logs)[-10:]
+            if not logs:
+                await self.send_message("📭 Belum ada log aktivitas.")
+                return
+            
+            text = "<b>📜 Log Aktivitas Terakhir:</b>\n<pre>"
+            for l in logs:
+                text += f"• {l['msg']}\n"
+            text += "</pre>"
+            await self.send_message(text)
+            
+        elif text.startswith("/dashboard"):
+            await self.send_message("🌐 <b>Dashboard Web:</b>\nhttps://molty5-production-8e42.up.railway.app/")
+            
+        elif text.startswith("/ping"):
+            await self.send_message("🏓 <b>Pong!</b> Bot aktif dan mendengarkan.")
 
 # Singleton instance
 tg_notifier = TelegramNotifier()

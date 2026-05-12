@@ -181,6 +181,7 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     is_alive = self_data.get("isAlive", True)
     inventory = self_data.get("inventory", [])
     equipped = self_data.get("equippedWeapon")
+    region_id = region.get("id", "")
     
     # ── Survival Context (v1.6.1) ────────────────────────────────
     # Check if we are taking "unexplained" damage (not from a known fight)
@@ -922,10 +923,13 @@ def _choose_move_target(connections, danger_ids: set, visible_items: list,
             score = 0
             terrain = conn.get("terrain", "").lower()
 
-            # Terrain scoring per game-systems.md
+            # Terrain scoring per Pro Player Strategy
             terrain_scores = {
-                "hills": 4, "plains": 2, "ruins": 2,
-                "forest": 1, "water": -3,
+                "hills": 8,   # High Ground Priority (Vision bonus)
+                "plains": 2,
+                "ruins": 2,
+                "forest": 4 if hp < 50 else 1, # Stealth Recovery (Concealment)
+                "water": -10,  # Water Avoidance (Heavy EP penalty)
             }
             score += terrain_scores.get(terrain, 0)
 

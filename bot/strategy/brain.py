@@ -528,34 +528,63 @@ _known_agents: dict = {}
 def _check_pickup(items: list, inventory: list, region_id: str, equipped=None) -> dict | None:
     """Smart pickup: weapons > healing stockpile > utility > Moltz (always).
     Max inventory = 10 per limits.md.
+    v1.6.2: Smart Storage — drop low-priority items for better ground items when full.
     """
-    if len(inventory) >= 10:
-        return None
-    # Filter items in current region (items may lack regionId field)
-    local_items = [i for i in items
-                   if isinstance(i, dict) and i.get("regionId") == region_id]
-    # Fallback: if regionId filter found nothing, use all visible items
-    # (the game may not set regionId on item objects)
-    if not local_items:
-        local_items = [i for i in items if isinstance(i, dict) and i.get("id")]
-    if not local_items:
-        return None
-
     # Count current healing items for stockpile management
     heal_count = sum(1 for i in inventory if isinstance(i, dict)
                      and i.get("typeId", "").lower() in RECOVERY_ITEMS
                      and RECOVERY_ITEMS.get(i.get("typeId", "").lower(), 0) > 0)
 
-    # Sort by priority — Moltz always first
+    # Filter items in current region (items may lack regionId field)
+    local_items = [i for i in items
+                   if isinstance(i, dict) and i.get("regionId") == region_id]
+    if not local_items:
+        # Fallback for game versions that don't tag items with regionId
+        local_items = [i for i in items if isinstance(i, dict) and i.get("id")]
+    if not local_items:
+        return None
+
+    # Sort ground items by score
     local_items.sort(
         key=lambda i: _pickup_score(i, inventory, heal_count, equipped), reverse=True)
-    best = local_items[0]
-    score = _pickup_score(best, inventory, heal_count, equipped)
-    if score > 0:
-        type_id = best.get('typeId', 'item')
-        log.info("PICKUP: %s (score=%d, heal_stock=%d)", type_id, score, heal_count)
-        return {"action": "pickup", "data": {"itemId": best["id"]},
+    best_ground = local_items[0]
+    ground_score = _pickup_score(best_ground, inventory, heal_count, equipped)
+
+    if ground_score <= 0:
+        return None
+
+    # Case A: Inventory not full — proceed with normal pickup
+    if len(inventory) < 10:
+        type_id = best_ground.get('typeId', 'item')
+        log.info("PICKUP: %s (score=%d, heal_stock=%d)", type_id, ground_score, heal_count)
+        return {"action": "pickup", "data": {"itemId": best_ground["id"]},
                 "reason": f"PICKUP: {type_id}"}
+
+    # Case B: Inventory FULL — check for "Smart Storage" (drop and replace)
+    else:
+        # Calculate scores for items currently in inventory
+        inv_scored = []
+        for inv_item in inventory:
+            if not isinstance(inv_item, dict): continue
+            # Score as if we were picking it up fresh (simplified)
+            # We add a 'retention bonus' so we don't drop/pickup identical items
+            s = _pickup_score(inv_item, [], 0, None) + 10
+            # Currency is UNDROPPABLE (score it extremely high)
+            if _get_item_category(inv_item) == "currency" or _get_item_type(inv_item) in ["moltz", "smoltz"]:
+                s += 1000
+            inv_scored.append((inv_item, s))
+        
+        # Sort by score ascending (weakest first)
+        inv_scored.sort(key=lambda x: x[1])
+        worst_inv, worst_score = inv_scored[0]
+
+        # If ground item is significantly better than worst inventory item -> DROP
+        if ground_score > worst_score + 15:
+            log.info("💾 SMART STORAGE: Dropping %s (score %d) to make room for %s (score %d)",
+                     _get_item_type(worst_inv), worst_score, _get_item_type(best_ground), ground_score)
+            return {"action": "drop", "data": {"itemId": worst_inv["id"]},
+                    "reason": f"SMART STORAGE: Dropping {_get_item_type(worst_inv)} for {_get_item_type(best_ground)}"}
+
     return None
 
 

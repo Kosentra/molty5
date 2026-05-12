@@ -9,7 +9,7 @@ log = get_logger(__name__)
 # Group 1 actions (trigger 60s cooldown)
 COOLDOWN_ACTIONS = {"move", "attack", "use_item", "interact", "rest"}
 # Group 2 actions (no cooldown)
-FREE_ACTIONS = {"pickup", "equip", "talk", "whisper", "broadcast"}
+FREE_ACTIONS = {"pickup", "equip", "talk", "whisper", "broadcast", "drop"}
 
 
 class ActionSender:
@@ -78,6 +78,9 @@ class ActionSender:
 
     def equip(self, weapon_id: str) -> dict:
         return self.build_action("equip", {"itemId": weapon_id}, "Equipping weapon", "Equip")
+
+    def drop(self, item_id: str) -> dict:
+        return self.build_action("drop", {"itemId": item_id}, "Dropping item to free space", "Drop")
 
     def talk(self, message: str) -> dict:
         return self.build_action("talk", {"message": message[:200]}, "", "Talk")

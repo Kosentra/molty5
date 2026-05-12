@@ -45,6 +45,8 @@ WEAPON_PRIORITY = ["katana", "sniper", "sword", "pistol", "dagger", "bow", "fist
 # Binoculars = passive (vision+1 just by holding), always pickup.
 ITEM_PRIORITY = {
     "rewards": 300, "moltz": 300, "smoltz": 300,  # ALWAYS pickup first
+    "reward1": 300, "reward2": 300, "reward3": 300, # Variations
+    "gold": 300, "credits": 300, "balance": 300,   # Alternative names
     "katana": 100, "sniper": 95, "sword": 90, "pistol": 85,
     "dagger": 80, "bow": 75,
     "medkit": 70, "bandage": 65, "emergency_food": 60, "energy_drink": 58,
@@ -140,10 +142,11 @@ def _get_region_id(entry) -> str:
 
 def reset_game_state():
     """Reset per-game tracking state. Call when game ends."""
-    global _known_agents, _map_knowledge, _survival_state
+    global _known_agents, _map_knowledge, _survival_state, _used_facilities
     _known_agents = {}
     _map_knowledge = {"revealed": False, "death_zones": set(), "safe_center": []}
     _survival_state = {"last_hp": 100}
+    _used_facilities = set()
     log.info("Strategy brain reset for new game")
 
 
@@ -190,19 +193,30 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     # View-level fields per api-summary.md
     visible_agents = view.get("visibleAgents", [])
     visible_monsters = view.get("visibleMonsters", [])
-    visible_npcs = view.get("visibleNPCs", [])
     visible_items_raw = view.get("visibleItems", [])
+    
+    # NEW: Also look for items inside the current region object
+    region_items_raw = region.get("items", []) if isinstance(region, dict) else []
+    
     # Unwrap: each visibleItem is { regionId, item: { id, name, typeId, ... } }
     visible_items = []
-    for entry in visible_items_raw:
-        if not isinstance(entry, dict):
-            continue
-        inner = entry.get("item")
-        if isinstance(inner, dict):
-            inner["regionId"] = entry.get("regionId", "")
-            visible_items.append(inner)
-        elif entry.get("id"):
-            visible_items.append(entry)  # Legacy flat format
+    
+    def _collect_items(raw_list, fallback_region_id=None):
+        for entry in raw_list:
+            if not isinstance(entry, dict):
+                continue
+            inner = entry.get("item")
+            if isinstance(inner, dict):
+                inner["regionId"] = entry.get("regionId", fallback_region_id or "")
+                visible_items.append(inner)
+            elif entry.get("id"):
+                if fallback_region_id and not entry.get("regionId"):
+                    entry["regionId"] = fallback_region_id
+                visible_items.append(entry)
+                
+    _collect_items(visible_items_raw)
+    _collect_items(region_items_raw, fallback_region_id=region_id)
+
     visible_regions = view.get("visibleRegions", [])
     connected_regions = view.get("connectedRegions", [])
     pending_dz = view.get("pendingDeathzones", [])
@@ -336,31 +350,36 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
                     "reason": f"{reason} (+5 EP)"}
 
     # ── Priority 5: Guardian farming (v1.6.0: 120 sMoltz per kill!) ─
-    # Only 5 guardians per free room — each worth 120 sMoltz!
-    # Guardians now ATTACK back — only fight if we can win.
-    if guardians and ep >= 2 and hp >= 35:
+    # Guardians drop 120 sMoltz — high priority but they fight back!
+    if guardians and ep >= 2:
         target = _select_weakest(guardians)
         w_range = get_weapon_range(equipped)
         if _is_in_range(target, region_id, w_range, connections):
-            # v1.6.0: guardians fight back — check if we can take them
             my_dmg = calc_damage(atk, get_weapon_bonus(equipped),
                                 target.get("def", 5), region_weather)
-            guardian_dmg = calc_damage(target.get("atk", 10),
-                                       _estimate_enemy_weapon_bonus(target),
-                                       defense, region_weather)
-            # Fight if we deal more damage OR target is low HP (finish off)
-            # Aggressive Guardian Farming: fight if we can win or have decent HP
-            # Guardians drop 120 sMoltz — worth the risk!
-            if my_dmg >= guardian_dmg - 5 or hp > 45 or target.get("hp", 100) <= my_dmg * 5:
+            enemy_dmg = calc_damage(target.get("atk", 10),
+                                     _estimate_enemy_weapon_bonus(target),
+                                     defense, region_weather)
+            target_hp = target.get("hp", 100)
+
+            # Smart Combat Simulation:
+            turns_to_kill = (target_hp / max(1, my_dmg))
+            est_damage_taken = turns_to_kill * enemy_dmg
+            
+            # Fight if:
+            # 1. We survive the trade with > 15 HP safety margin
+            # 2. OR we can kill them in 1-2 hits (finish off)
+            # 3. OR we have range advantage (Kiting handled in Priority 6, but check here too)
+            if hp > est_damage_taken + 15 or target_hp <= my_dmg * 2:
                 return {"action": "attack",
                         "data": {"targetId": target["id"], "targetType": "agent"},
-                        "reason": f"GUARDIAN AGGRO: Target HP={target.get('hp','?')} "
-                                  f"(120 sMoltz! dmg={my_dmg} vs {guardian_dmg})"}
+                        "reason": f"GUARDIAN AGGRO: Winning trade! Takes {int(turns_to_kill)} turns, "
+                                  f"est_loss={int(est_damage_taken)} HP (Target={target_hp})"}
+            else:
+                log.info("🛡️ Guardian too strong for head-on fight (est_loss=%d), waiting for better condition", est_damage_taken)
 
     # ── Priority 6: Favorable agent combat ────────────────────────
-    # Be VERY aggressive. Favorable = we are stronger, target is weak, or we have high HP.
-    hp_threshold = 35 if alive_count > 15 else 15
-    if enemies and ep >= 2 and hp >= hp_threshold:
+    if enemies and ep >= 2:
         target = _select_weakest(enemies)
         w_range = get_weapon_range(equipped)
         if _is_in_range(target, region_id, w_range, connections):
@@ -369,38 +388,43 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
             enemy_dmg = calc_damage(target.get("atk", 10),
                                      _estimate_enemy_weapon_bonus(target),
                                      defense, region_weather)
+            target_hp = target.get("hp", 100)
+
+            # Smart Combat Simulation:
+            turns_to_kill = (target_hp / max(1, my_dmg))
+            est_damage_taken = turns_to_kill * enemy_dmg
+
             # ── Priority 6b: Kiting Logic (Hit & Run) ──────────────
-            # If target is stronger but we have a ranged weapon, keep distance!
-            w_range = get_weapon_range(equipped)
-            enemy_range = _estimate_enemy_weapon_bonus(target) # This is bonus, need range
-            # Mock range for now: 1 for firearms, 0 for melee
             enemy_w = target.get("equippedWeapon")
             enemy_w_type = _get_item_type(enemy_w) if enemy_w else ""
             enemy_real_range = WEAPONS.get(enemy_w_type, {}).get("range", 0)
 
-            # Is this enemy a threat? (they deal more or similar damage)
-            is_threat = enemy_dmg >= my_dmg - 5
-            
-            if is_threat and w_range > enemy_real_range:
+            if w_range > enemy_real_range:
                 # We have a range advantage!
                 if target.get("regionId") == region_id:
-                    # Too close! Kite away to an adjacent region
-                    safe = _find_safe_region(connections, danger_ids, view)
-                    if safe and ep >= move_ep_cost:
-                        return {"action": "move", "data": {"regionId": safe},
-                                "reason": f"KITE: Enemy {target.get('name','?')} is strong melee, moving to range"}
-                elif _is_in_range(target, region_id, w_range, connections):
-                    # In our range but out of their range (or they are melee)
+                    # Too close! Kite away if trade is bad
+                    if hp < est_damage_taken + 20:
+                        safe = _find_safe_region(connections, danger_ids, view)
+                        if safe and ep >= move_ep_cost:
+                            return {"action": "move", "data": {"regionId": safe},
+                                    "reason": f"KITE: Enemy is strong melee, maintaining range advantage"}
+                else:
+                    # Shoot! (Kiting/Reaping)
                     return {"action": "attack",
                             "data": {"targetId": target["id"], "targetType": "agent"},
-                            "reason": f"REAP: Kiting {target.get('name','?')} from distance (HP={target.get('hp','?')})"}
+                            "reason": f"REAP: Kiting {target.get('name','?')} from safety (HP={target_hp})"}
 
-            # Standard Maximum Aggression Combat Logic:
-            if my_dmg >= enemy_dmg - 8 or hp > 40 or target.get("hp", 100) <= my_dmg * 5:
+            # Direct Attack Logic:
+            # 1. We win the trade clearly
+            # 2. OR target is weak (finish off)
+            # 3. OR it's late game (be desperate)
+            hp_safety = 15 if alive_count > 20 else 5
+            if hp > est_damage_taken + hp_safety or target_hp <= my_dmg * 2:
                 return {"action": "attack",
                         "data": {"targetId": target["id"], "targetType": "agent"},
-                        "reason": f"COMBAT AGGRO: Target HP={target.get('hp', '?')}, "
-                                  f"dmg={my_dmg} vs enemy_dmg={enemy_dmg}"}
+                        "reason": f"COMBAT AGGRO: Calculated WIN. est_loss={int(est_damage_taken)} HP, Target={target_hp}"}
+            else:
+                log.info("🛡️ Avoiding bad trade with %s (est_loss=%d)", target.get('name','?'), est_damage_taken)
 
     # ── Priority 7: Monster farming ───────────────────────────────
     if monsters and ep >= 2:
@@ -714,15 +738,23 @@ def _is_in_range(target: dict, my_region: str, weapon_range: int,
     return False
 
 
+# Track recently used facilities to avoid loops
+_used_facilities = set()
+
 def _select_facility(interactables: list, hp: int, ep: int) -> dict | None:
     """Select best facility to interact with per game-systems.md.
     Facilities: supply_cache, medical_facility, watchtower, broadcast_station, cave.
     """
+    global _used_facilities
     for fac in interactables:
         if not isinstance(fac, dict):
             continue
+        fid = fac.get("id", "")
+        if fid in _used_facilities:
+            continue
         if fac.get("isUsed"):
             continue
+            
         ftype = fac.get("type", "").lower()
         # Priority: medical (if HP < 80) > supply_cache > watchtower > broadcast_station
         if ftype == "medical_facility" and hp < 80:
@@ -732,8 +764,16 @@ def _select_facility(interactables: list, hp: int, ep: int) -> dict | None:
         if ftype == "watchtower":
             return fac
         if ftype == "broadcast_station":
+            # For broadcast station, only interact if we have something to say 
+            # or to complete a quest. To prevent loops, we mark it used.
             return fac
+            
     return None
+
+def mark_facility_used(facility_id: str):
+    """Call this when interaction is successful."""
+    if facility_id:
+        _used_facilities.add(facility_id)
 
 
 def _track_agents(visible_agents: list, my_id: str, my_region: str):
@@ -836,10 +876,15 @@ def _choose_move_target(connections, danger_ids: set, visible_items: list,
         if isinstance(item, dict):
             rid = item.get("regionId", "")
             if rid:
-                # Stronger attraction for rewards/moltz
                 type_id = _get_item_type(item)
-                if type_id in ["rewards", "moltz", "smoltz"]:
-                    item_regions.add((rid, 15))
+                cat = _get_item_category(item)
+                # Stronger attraction for rewards, weapons, and high-tier recovery
+                if type_id in ["rewards", "moltz", "smoltz"] or cat == "currency":
+                    item_regions.add((rid, 25)) # Very strong pull
+                elif cat == "weapon":
+                    item_regions.add((rid, 15)) # Strong pull for weapons
+                elif type_id in ["medkit", "energy_drink"]:
+                    item_regions.add((rid, 12))
                 else:
                     item_regions.add((rid, 8))
 

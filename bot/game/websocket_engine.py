@@ -173,6 +173,14 @@ class WebSocketEngine:
                 data = msg.get("data", {})
                 action_msg = data.get("message", "") if isinstance(data, dict) else str(data)
                 log.info("Action OK: %s (canAct=%s)", action_msg, msg.get("canAct"))
+                
+                # Mark facility as used if this was an interact action
+                if hasattr(self, "_last_action_sent") and self._last_action_sent.get("type") == "interact":
+                    fac_id = self._last_action_sent.get("data", {}).get("interactableId")
+                    if fac_id:
+                        from bot.strategy.brain import mark_facility_used
+                        mark_facility_used(fac_id)
+
                 # Track map usage for learning on next view
                 if isinstance(data, dict) and "map" in str(action_msg).lower():
                     self._map_just_used = True
@@ -372,6 +380,9 @@ class WebSocketEngine:
             "maxEp": self_data.get("maxEp", 10),
             "atk": self_data.get("atk", 0),
             "def": self_data.get("def", 0),
+            "moltz": self_data.get("moltz", self_data.get("Moltz", 0)),
+            "smoltz": self_data.get("smoltz", self_data.get("sMoltz", self_data.get("balance", 0))),
+            "cross": self_data.get("cross", self_data.get("Cross", 0)),
             "weapon": weapon_name,
             "weapon_bonus": weapon_bonus,
             "kills": self_data.get("kills", 0),
@@ -414,6 +425,7 @@ class WebSocketEngine:
         payload = self.action_sender.build_action(
             action_type, action_data, reason, action_type,
         )
+        self._last_action_sent = payload["data"]  # Track just the data part
 
         await self._send(payload)
         log.info("→ %s | %s", action_type.upper(), reason)

@@ -123,12 +123,21 @@ class Heartbeat:
         # Feed dashboard with account info — use CONSISTENT key
         self._agent_key = str(me.get("agentId", me.get("id", "agent-1")))
         self._agent_name = me.get("agentName", me.get("name", "Agent"))
+        
         balance = me.get("balance", 0)
+        moltz = me.get("moltz", 0)
+        cross = me.get("cross", 0)
+        
         dashboard_state.total_smoltz = balance
+        dashboard_state.total_moltz = moltz
+        dashboard_state.total_cross = cross
+        
         dashboard_state.update_agent(self._agent_key, {
             "name": self._agent_name,
             "status": "playing" if state == IN_GAME else "idle",
             "smoltz": balance,
+            "moltz": moltz,
+            "cross": cross,
             "whitelisted": state != NO_IDENTITY,
         })
 

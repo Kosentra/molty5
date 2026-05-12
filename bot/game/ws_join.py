@@ -190,6 +190,14 @@ class JoinEngine:
                 data = msg.get("data", {})
                 action_msg = data.get("message", "") if isinstance(data, dict) else str(data)
                 log.info("Action OK: %s (canAct=%s)", action_msg, msg.get("canAct"))
+                
+                # Mark facility as used if this was an interact action
+                if hasattr(self, "_last_action_sent") and self._last_action_sent.get("type") == "interact":
+                    fac_id = self._last_action_sent.get("interactableId")
+                    if fac_id:
+                        from bot.strategy.brain import mark_facility_used
+                        mark_facility_used(fac_id)
+
                 if isinstance(data, dict) and "map" in str(action_msg).lower():
                     self._map_just_used = True
             else:
@@ -264,13 +272,60 @@ class JoinEngine:
             })
             return
 
+        # Log status
         hp = self_data.get("hp", "?")
         ep = self_data.get("ep", "?")
         region = view.get("currentRegion", {})
         region_name = region.get("name", "?") if isinstance(region, dict) else "?"
         log.info("Status: HP=%s EP=%s Region=%s | Alive: %s", hp, ep, region_name, alive_count)
 
-        dashboard_state.update_agent(self.dashboard_key, {
+        # Feed dashboard with live game data
+        inv = self_data.get("inventory", [])
+        enemies = [a for a in view.get("visibleAgents", [])
+                   if isinstance(a, dict) and a.get("isAlive") and a.get("id") != self_data.get("id")]
+
+        # Region items unwrap logic
+        region_id = region.get("id", "") if isinstance(region, dict) else ""
+
+        def _unwrap_items(raw_items):
+            result = []
+            for entry in raw_items:
+                if not isinstance(entry, dict): continue
+                inner = entry.get("item")
+                if isinstance(inner, dict):
+                    inner["regionId"] = entry.get("regionId", "")
+                    result.append(inner)
+                elif entry.get("id"):
+                    result.append(entry)
+            return result
+
+        region_items = []
+        if isinstance(region, dict) and region.get("items"):
+            region_items = _unwrap_items(region["items"])
+        if not region_items:
+            all_visible = _unwrap_items(view.get("visibleItems", []))
+            region_items = [i for i in all_visible if i.get("regionId") == region_id]
+        if not region_items:
+            all_visible = _unwrap_items(view.get("visibleItems", []))
+            if all_visible: region_items = all_visible
+
+        equipped = self_data.get("equippedWeapon")
+        weapon_name = "fist"
+        weapon_bonus = 0
+        if equipped and isinstance(equipped, dict):
+            weapon_name = equipped.get("typeId", "fist")
+            from bot.strategy.brain import WEAPONS
+            weapon_bonus = WEAPONS.get(weapon_name.lower(), {}).get("bonus", 0)
+
+        def _item_label(i):
+            return (i.get("name") or i.get("typeId") or i.get("type") or i.get("itemType") or
+                    i.get("itemName") or i.get("label") or i.get("kind") or str(i.get("id", "?"))[:12])
+
+        def _item_cat(i):
+            return (i.get("category") or i.get("cat") or i.get("itemCategory") or i.get("type") or "")
+
+        dk = self.dashboard_key
+        dashboard_state.update_agent(dk, {
             "name": self.dashboard_name,
             "hp": hp, "ep": ep,
             "status": "playing",
@@ -278,14 +333,25 @@ class JoinEngine:
             "maxEp": self_data.get("maxEp", 10),
             "atk": self_data.get("atk", 0),
             "def": self_data.get("def", 0),
+            "moltz": self_data.get("moltz", self_data.get("Moltz", 0)),
+            "smoltz": self_data.get("smoltz", self_data.get("sMoltz", self_data.get("balance", 0))),
+            "cross": self_data.get("cross", self_data.get("Cross", 0)),
+            "weapon": weapon_name,
+            "weapon_bonus": weapon_bonus,
             "kills": self_data.get("kills", 0),
             "region": region_name,
             "alive_count": alive_count,
-            "room_type": self.entry_type,
+            "inventory": [{"typeId": i.get("typeId","?"), "name": _item_label(i), "cat": _item_cat(i)}
+                          for i in inv if isinstance(i, dict)],
+            "enemies": [{"name": e.get("name","?"), "hp": e.get("hp","?"), "id": e.get("id","")}
+                        for e in enemies[:8]],
+            "region_items": [{"typeId": i.get("typeId","?"), "name": _item_label(i), "cat": _item_cat(i)}
+                             for i in region_items[:10]],
         })
+
         dashboard_state.add_log(
             f"HP={hp} EP={ep} Region={region_name} | Alive: {alive_count}",
-            "info", self.dashboard_key,
+            "info", dk
         )
 
         # Map learning after Map item used
@@ -310,6 +376,7 @@ class JoinEngine:
             return
 
         payload = self.action_sender.build_action(action_type, action_data, reason, action_type)
+        self._last_action_sent = payload["data"]  # Track last action data
         await self._send(payload)
         log.info("→ %s | %s", action_type.upper(), reason)
         dashboard_state.update_agent(self.dashboard_key, {

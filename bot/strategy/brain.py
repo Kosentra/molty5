@@ -99,6 +99,7 @@ def get_weapon_range(equipped_weapon) -> int:
 _known_agents: dict = {}
 # Map knowledge: track all revealed DZ/pending DZ/safe regions after using Map
 _map_knowledge: dict = {"revealed": False, "death_zones": set(), "safe_center": []}
+_survival_state: dict = {"last_hp": 100}
 
 
 def _get_item_type(item: dict) -> str:
@@ -137,12 +138,12 @@ def _get_region_id(entry) -> str:
         return entry.get("id", "")
     return ""
 
-
 def reset_game_state():
     """Reset per-game tracking state. Call when game ends."""
-    global _known_agents, _map_knowledge
+    global _known_agents, _map_knowledge, _survival_state
     _known_agents = {}
     _map_knowledge = {"revealed": False, "death_zones": set(), "safe_center": []}
+    _survival_state = {"last_hp": 100}
     log.info("Strategy brain reset for new game")
 
 
@@ -181,9 +182,10 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     # ── Survival Context (v1.6.1) ────────────────────────────────
     # Check if we are taking "unexplained" damage (not from a known fight)
     # This helps escape hazards not flagged as isDeathZone.
-    last_hp = getattr(self, "_last_hp", hp)
+    global _survival_state
+    last_hp = _survival_state.get("last_hp", hp)
     taking_damage = hp < last_hp
-    setattr(self, "_last_hp", hp)
+    _survival_state["last_hp"] = hp
 
     # View-level fields per api-summary.md
     visible_agents = view.get("visibleAgents", [])

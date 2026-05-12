@@ -757,11 +757,28 @@ def _choose_move_target(connections, danger_ids: set,
     """
     candidates = []
 
-    # Build set of regions with visible items for attraction
+    # Build set of regions with visible items or targets for attraction
     item_regions = set()
     for item in visible_items:
         if isinstance(item, dict):
-            item_regions.add(item.get("regionId", ""))
+            rid = item.get("regionId", "")
+            if rid:
+                # Stronger attraction for rewards/moltz
+                type_id = _get_item_type(item)
+                if type_id in ["rewards", "moltz", "smoltz"]:
+                    item_regions.add((rid, 15))
+                else:
+                    item_regions.add((rid, 8))
+
+    # Add attraction for weak targets in adjacent regions
+    target_regions = set()
+    for agent in view.get("visibleAgents", []):
+        if isinstance(agent, dict) and agent.get("isAlive", True):
+            arid = agent.get("regionId", "")
+            if arid and arid != current_region.get("id"):
+                a_hp = agent.get("hp", 100)
+                if a_hp < 40 or agent.get("isGuardian"):
+                    target_regions.add((arid, 12))  # Chase weak players or any guardian
 
     for conn in connections:
         if isinstance(conn, str):
@@ -769,8 +786,12 @@ def _choose_move_target(connections, danger_ids: set,
             if conn in danger_ids:
                 continue
             score = 1
-            if conn in item_regions:
-                score += 5
+            for rid, bonus in item_regions:
+                if conn == rid:
+                    score += bonus
+            for rid, bonus in target_regions:
+                if conn == rid:
+                    score += bonus
             candidates.append((conn, score))
 
         elif isinstance(conn, dict):
@@ -791,6 +812,13 @@ def _choose_move_target(connections, danger_ids: set,
 
             if rid in item_regions:
                 score += 5
+
+            for irid, bonus in item_regions:
+                if rid == irid:
+                    score += bonus
+            for trid, bonus in target_regions:
+                if rid == trid:
+                    score += bonus
 
             # Facilities attract
             facs = conn.get("interactables", [])

@@ -234,6 +234,12 @@ class JoinEngine:
             err_msg = msg.get("message", msg.get("data", {}).get("message", str(msg)))
             log.error("Server error: %s", err_msg)
 
+        elif msg_type == "event":
+            event_type = msg.get("eventType", msg.get("data", {}).get("eventType", ""))
+            log.info("Event: %s", event_type)
+            # v1.6.1 events can include item_dropped, agent_moved, facility_used
+            # State is primarily synced via agent_view/turn_advanced snapshots.
+
         else:
             log.info("Unknown WS message: type=%s keys=%s", msg_type, list(msg.keys()))
 

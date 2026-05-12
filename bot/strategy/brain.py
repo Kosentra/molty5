@@ -44,7 +44,7 @@ WEAPON_PRIORITY = ["katana", "sniper", "sword", "pistol", "dagger", "bow", "fist
 # Moltz = ALWAYS pickup (highest). Weapons > healing > utility.
 # Binoculars = passive (vision+1 just by holding), always pickup.
 ITEM_PRIORITY = {
-    "rewards": 300,  # Moltz/sMoltz — ALWAYS pickup first
+    "rewards": 300, "moltz": 300, "smoltz": 300,  # ALWAYS pickup first
     "katana": 100, "sniper": 95, "sword": 90, "pistol": 85,
     "dagger": 80, "bow": 75,
     "medkit": 70, "bandage": 65, "emergency_food": 60, "energy_drink": 58,
@@ -99,6 +99,18 @@ def get_weapon_range(equipped_weapon) -> int:
 _known_agents: dict = {}
 # Map knowledge: track all revealed DZ/pending DZ/safe regions after using Map
 _map_knowledge: dict = {"revealed": False, "death_zones": set(), "safe_center": []}
+
+
+def _get_item_type(item: dict) -> str:
+    """Robustly extract item type/typeId from any field."""
+    return (item.get("typeId") or item.get("type") or item.get("itemType") or
+            item.get("name") or "").lower()
+
+
+def _get_item_category(item: dict) -> str:
+    """Robustly extract item category from any field."""
+    return (item.get("category") or item.get("cat") or item.get("itemCategory") or
+            item.get("type") or "").lower()
 
 
 def _resolve_region(entry, view: dict):
@@ -258,7 +270,7 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
     # ── FREE ACTIONS (no cooldown, do before main action) ─────────
 
     # Auto-pickup Moltz (currency) and valuable items
-    pickup_action = _check_pickup(visible_items, inventory, region_id)
+    pickup_action = _check_pickup(visible_items, inventory, region_id, equipped)
     if pickup_action:
         return pickup_action
 
@@ -316,16 +328,17 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
                                        _estimate_enemy_weapon_bonus(target),
                                        defense, region_weather)
             # Fight if we deal more damage OR target is low HP (finish off)
-            if my_dmg >= guardian_dmg or target.get("hp", 100) <= my_dmg * 3:
+            # Aggressive Guardian Farming: fight if we can win or have decent HP
+            # Guardians drop 120 sMoltz — worth the risk!
+            if my_dmg >= guardian_dmg - 5 or hp > 45 or target.get("hp", 100) <= my_dmg * 5:
                 return {"action": "attack",
                         "data": {"targetId": target["id"], "targetType": "agent"},
-                        "reason": f"GUARDIAN FARM: HP={target.get('hp','?')} "
+                        "reason": f"GUARDIAN AGGRO: Target HP={target.get('hp','?')} "
                                   f"(120 sMoltz! dmg={my_dmg} vs {guardian_dmg})"}
 
     # ── Priority 6: Favorable agent combat ────────────────────────
-    # Be more aggressive when fewer agents remain (late game)
-    # Per game-systems.md: avoid combat in storm(-15%) or fog(-10%)
-    hp_threshold = 40 if alive_count > 20 else 25
+    # Be VERY aggressive. Favorable = we are stronger, target is weak, or we have high HP.
+    hp_threshold = 35 if alive_count > 15 else 15
     enemies = [a for a in visible_agents
                if not a.get("isGuardian", False) and a.get("isAlive", True)
                and a.get("id") != self_data.get("id")]
@@ -338,11 +351,14 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
             enemy_dmg = calc_damage(target.get("atk", 10),
                                      _estimate_enemy_weapon_bonus(target),
                                      defense, region_weather)
-            # Fight only if we deal more damage or target is low HP
-            if my_dmg > enemy_dmg or target.get("hp", 100) <= my_dmg * 2:
+            # Maximum Aggression Combat Logic:
+            # - Always finish off weak targets (HP < my_dmg * 5)
+            # - Fight if we deal similar or slightly less damage (my_dmg >= enemy_dmg - 8)
+            # - Fight if we have enough HP to survive a few hits (hp > 40)
+            if my_dmg >= enemy_dmg - 8 or hp > 40 or target.get("hp", 100) <= my_dmg * 5:
                 return {"action": "attack",
                         "data": {"targetId": target["id"], "targetType": "agent"},
-                        "reason": f"COMBAT: Target HP={target.get('hp', '?')}, "
+                        "reason": f"COMBAT AGGRO: Target HP={target.get('hp', '?')}, "
                                   f"dmg={my_dmg} vs enemy_dmg={enemy_dmg}"}
 
     # ── Priority 7: Monster farming ───────────────────────────────
@@ -380,9 +396,10 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
                     "reason": "EXPLORE: Moving to better position"}
 
     # ── Priority 10: Rest (EP < 4 and safe) ───────────────────────
-    if ep < 4 and not enemies and not region.get("isDeathZone") and region_id not in danger_ids:
+    # Allow rest if EP is low, as long as we're not in a death zone.
+    if ep < 4 and not region.get("isDeathZone") and region_id not in danger_ids:
         return {"action": "rest", "data": {},
-                "reason": f"REST: EP={ep}/{max_ep}, area is safe (+1 bonus EP)"}
+                "reason": f"REST: EP={ep}/{max_ep} (+1 bonus EP)"}
 
     return None  # Wait for next turn
 
@@ -427,15 +444,9 @@ _known_agents: dict = {}
 #     return ""
 
 
-def _check_pickup(items: list, inventory: list, region_id: str) -> dict | None:
+def _check_pickup(items: list, inventory: list, region_id: str, equipped=None) -> dict | None:
     """Smart pickup: weapons > healing stockpile > utility > Moltz (always).
     Max inventory = 10 per limits.md.
-    Strategy:
-    - Moltz ($rewards): ALWAYS pickup, highest priority
-    - Weapons: pickup if better than current OR no weapon equipped
-    - Healing: stockpile for endgame (keep at least 2-3 healing items)
-    - Binoculars: passive vision+1, always pickup
-    - Map: pickup and use immediately
     """
     if len(inventory) >= 10:
         return None
@@ -456,9 +467,9 @@ def _check_pickup(items: list, inventory: list, region_id: str) -> dict | None:
 
     # Sort by priority — Moltz always first
     local_items.sort(
-        key=lambda i: _pickup_score(i, inventory, heal_count), reverse=True)
+        key=lambda i: _pickup_score(i, inventory, heal_count, equipped), reverse=True)
     best = local_items[0]
-    score = _pickup_score(best, inventory, heal_count)
+    score = _pickup_score(best, inventory, heal_count, equipped)
     if score > 0:
         type_id = best.get('typeId', 'item')
         log.info("PICKUP: %s (score=%d, heal_stock=%d)", type_id, score, heal_count)
@@ -467,23 +478,23 @@ def _check_pickup(items: list, inventory: list, region_id: str) -> dict | None:
     return None
 
 
-def _pickup_score(item: dict, inventory: list, heal_count: int) -> int:
+def _pickup_score(item: dict, inventory: list, heal_count: int, equipped=None) -> int:
     """Calculate dynamic pickup score based on current inventory state."""
-    type_id = item.get("typeId", "").lower()
-    category = item.get("category", "").lower()
+    type_id = _get_item_type(item)
+    category = _get_item_category(item)
 
     # Moltz/sMoltz — ALWAYS pickup
-    if type_id == "rewards" or category == "currency":
+    if type_id in ["rewards", "moltz", "smoltz"] or category == "currency":
         return 300
 
     # Weapons: higher score if no weapon or this is better
     if category == "weapon":
         bonus = WEAPONS.get(type_id, {}).get("bonus", 0)
-        # Check current best weapon in inventory
-        current_best = 0
+        # Check current best weapon in inventory OR equipped
+        current_best = get_weapon_bonus(equipped)
         for inv_item in inventory:
-            if isinstance(inv_item, dict) and inv_item.get("category") == "weapon":
-                cb = WEAPONS.get(inv_item.get("typeId", "").lower(), {}).get("bonus", 0)
+            if isinstance(inv_item, dict) and _get_item_category(inv_item) == "weapon":
+                cb = WEAPONS.get(_get_item_type(inv_item), {}).get("bonus", 0)
                 current_best = max(current_best, cb)
         if bonus > current_best:
             return 100 + bonus  # Better weapon = very high priority
@@ -520,8 +531,8 @@ def _check_equip(inventory: list, equipped) -> dict | None:
     for item in inventory:
         if not isinstance(item, dict):
             continue
-        if item.get("category") == "weapon":
-            type_id = item.get("typeId", "").lower()
+        if _get_item_category(item) == "weapon":
+            type_id = _get_item_type(item)
             bonus = WEAPONS.get(type_id, {}).get("bonus", 0)
             if bonus > best_bonus:
                 best = item

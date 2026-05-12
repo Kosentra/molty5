@@ -267,15 +267,17 @@ def decide_action(view: dict, can_act: bool, memory_temp: dict = None) -> dict |
             return {"action": "move", "data": {"regionId": safe},
                     "reason": f"GUARDIAN FLEE: HP={hp}, guardian in region, too dangerous"}
 
-    # ── FREE ACTIONS (no cooldown, do before main action) ─────────
+    # ── FREE ACTIONS (no cooldown) ────────────────────────────────
 
     # Auto-pickup Moltz (currency) and valuable items
     pickup_action = _check_pickup(visible_items, inventory, region_id, equipped)
     if pickup_action:
         return pickup_action
 
-    # Auto-equip better weapon
-    equip_action = _check_equip(inventory, equipped)
+    # SMART EQUIP: Switch to best weapon for nearby targets
+    # This handles auto-switching to ranged weapons if target is in adjacent region
+    all_targets = guardians + enemies + monsters
+    equip_action = _check_smart_equip(inventory, equipped, all_targets, region_id, connections)
     if equip_action:
         return equip_action
 
@@ -526,24 +528,53 @@ def _pickup_score(item: dict, inventory: list, heal_count: int, equipped=None) -
     return ITEM_PRIORITY.get(type_id, 0)
 
 
-def _check_equip(inventory: list, equipped) -> dict | None:
-    """Auto-equip best weapon from inventory."""
-    current_bonus = get_weapon_bonus(equipped) if equipped else 0
-    best = None
-    best_bonus = current_bonus
-    for item in inventory:
-        if not isinstance(item, dict):
-            continue
-        if _get_item_category(item) == "weapon":
-            type_id = _get_item_type(item)
-            bonus = WEAPONS.get(type_id, {}).get("bonus", 0)
-            if bonus > best_bonus:
-                best = item
-                best_bonus = bonus
-    if best:
-        return {"action": "equip", "data": {"itemId": best["id"]},
-                "reason": f"EQUIP: {best.get('typeId', 'weapon')} (+{best_bonus} ATK)"}
+def _check_smart_equip(inventory: list, equipped, targets: list,
+                       my_region: str, connections) -> dict | None:
+    """Smartly select the best weapon based on targets in range.
+    1. If a target is reachable with current weapon -> keep/equip strongest that reaches.
+    2. If target only reachable with ranged -> switch to ranged.
+    3. If no targets -> equip strongest overall.
+    """
+    current_bonus = get_weapon_bonus(equipped) if equipped else -1
+    current_range = get_weapon_range(equipped) if equipped else 0
+    
+    # 1. Check if any target is reachable with ANY weapon we have
+    all_weapons = [i for i in inventory if _get_item_category(i) == "weapon"]
+    if equipped:
+        # Add equipped weapon to comparison pool (mocked as inventory item)
+        all_weapons.append(equipped)
+
+    best_weapon = equipped
+    best_score = -1
+
+    for weapon in all_weapons:
+        w_type = _get_item_type(weapon)
+        w_bonus = WEAPONS.get(w_type, {}).get("bonus", 0)
+        w_range = WEAPONS.get(w_type, {}).get("range", 0)
+        
+        # Can this weapon hit ANY target?
+        reachable_targets = [t for t in targets if _is_in_range(t, my_region, w_range, connections)]
+        
+        # Scoring: Bonus damage + Range utility
+        # If it can hit a target, it's much better than one that can't.
+        reach_bonus = 1000 if reachable_targets else 0
+        score = reach_bonus + w_bonus
+        
+        if score > best_score:
+            best_score = score
+            best_weapon = weapon
+
+    if best_weapon and best_weapon != equipped:
+        w_name = _get_item_type(best_weapon)
+        return {"action": "equip", "data": {"itemId": best_weapon["id"]},
+                "reason": f"SMART EQUIP: Switching to {w_name} for better range/damage"}
+    
     return None
+
+
+def _check_equip(inventory: list, equipped) -> dict | None:
+    """Legacy/Fallback: Auto-equip best weapon from inventory."""
+    return _check_smart_equip(inventory, equipped, [], "", None)
 
 
 def _find_safe_region(connections, danger_ids: set, view: dict = None) -> str | None:

@@ -2,7 +2,9 @@
 Game settlement — Phase 3: process game end, update memory, prepare for next game.
 """
 from bot.memory.agent_memory import AgentMemory
+from bot.utils.telegram import tg_notifier
 from bot.utils.logger import get_logger
+
 
 log = get_logger(__name__)
 
@@ -45,5 +47,18 @@ async def settle_game(game_result: dict, entry_type: str, memory: AgentMemory):
     # Clear temp for next game
     memory.clear_temp()
     await memory.save()
+
+    # Telegram Report
+    status_icon = "🏆" if is_winner else "💀"
+    msg = (
+        f"{status_icon} <b>Game Over ({entry_type})</b>\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"🚩 Rank: <b>{final_rank}</b>\n"
+        f"⚔️ Kills: <b>{kills}</b>\n"
+        f"💰 Earned: <b>{smoltz_earned}</b> sMoltz\n"
+        f"✨ Total: <b>{memory.overall_history.get('total_smoltz', 0)}</b>"
+    )
+    await tg_notifier.send_message(msg)
+
 
     log.info("Settlement complete. Ready for next game.")

@@ -8,7 +8,9 @@ import os
 import sys
 from bot.heartbeat import Heartbeat
 from bot.dashboard.server import start_dashboard
+from bot.utils.telegram import tg_notifier
 from bot.utils.logger import get_logger
+
 
 log = get_logger(__name__)
 
@@ -27,7 +29,9 @@ def main():
         # Start dashboard server (non-blocking)
         await start_dashboard(port=DASHBOARD_PORT)
         # Run heartbeat (main bot loop — runs forever)
+        await tg_notifier.send_message("🚀 <b>Bot Online!</b>\nStarting command center...")
         await heartbeat.run()
+
 
     try:
         if sys.platform == "win32":

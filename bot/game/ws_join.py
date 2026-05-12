@@ -351,6 +351,12 @@ class JoinEngine:
                              for i in region_items[:10]],
         })
 
+        # Real-time Global Header Sync
+        dashboard_state.total_moltz = self_data.get("moltz", self_data.get("Moltz", 0))
+        dashboard_state.total_smoltz = self_data.get("smoltz", self_data.get("sMoltz", self_data.get("balance", 0)))
+        dashboard_state.total_cross = self_data.get("cross", self_data.get("Cross", 0))
+
+
         dashboard_state.add_log(
             f"HP={hp} EP={ep} Region={region_name} | Alive: {alive_count}",
             "info", dk

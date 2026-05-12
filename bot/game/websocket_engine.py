@@ -19,7 +19,9 @@ from bot.game.action_sender import ActionSender, COOLDOWN_ACTIONS, FREE_ACTIONS
 from bot.strategy.brain import decide_action, reset_game_state, learn_from_map
 from bot.dashboard.state import dashboard_state
 from bot.utils.rate_limiter import ws_limiter
+from bot.utils.telegram import tg_notifier
 from bot.utils.logger import get_logger
+
 
 log = get_logger(__name__)
 
@@ -285,7 +287,9 @@ class WebSocketEngine:
                 f"☠️ Agent DEAD — Alive remaining: {alive_count}",
                 "warning", dk
             )
+            await tg_notifier.send_message(f"☠️ <b>Agent DEAD!</b>\nRemaining players: {alive_count}")
             return
+
 
         # Log status
         hp = self_data.get("hp", "?")

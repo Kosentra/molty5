@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY bot/ ./bot/
 
 # Create dirs for credentials and memory persistence
-RUN mkdir -p /app/dev-agent /root/.molty-royale
+RUN mkdir -p /app/dev-agent /root/.claw-royale
 
 # Railway injects PORT env var; default 8080 for dashboard
 EXPOSE 8080

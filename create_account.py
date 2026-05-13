@@ -1,5 +1,5 @@
 """
-Script pembuatan akun Molty Royale.
+Script pembuatan akun Claw Royale.
 Jalankan sekali untuk mendapatkan API Key.
 
 Cara pakai:
@@ -18,8 +18,8 @@ BOT_NAME = f"Namabot-{uuid.uuid4().hex[:4]}"
 # Alamat wallet agent (Agent EOA) — bisa dikosongkan jika bot yang generate
 AGENT_WALLET_ADDRESS = ""  
 
-API_URL = "https://cdn.moltyroyale.com/api"
-SKILL_VERSION = "1.6.1"
+API_URL = "https://cdn.clawroyale.ai/api"
+SKILL_VERSION = "1.6.2"
 # ─────────────────────────────────────────────────────────────────────────────
 
 payload = {"name": BOT_NAME}
@@ -33,7 +33,7 @@ headers = {
 }
 
 print(f"Membuat akun untuk bot: {BOT_NAME}")
-print("Menghubungi server Molty Royale...")
+print("Menghubungi server Claw Royale...")
 
 try:
     response = requests.post(f"{API_URL}/accounts", json=payload, headers=headers)

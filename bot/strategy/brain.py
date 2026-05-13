@@ -1,11 +1,12 @@
 """
 Strategy brain — main decision engine with priority-based action selection.
-v1.6.2: CLAW ROYALE EDITION
-- Aggressive Execution: Execute anyone with HP < 40.
-- Loot Reaping: Focus on killing players to steal their healing items.
+v1.6.3: CLAW ROYALE REAPER PRO
+- Predator Pursuit: Move towards enemies if no loot nearby.
+- Reap & loot: Prioritize $Moltz and item recovery.
 - Ranged Harassment: Use Sniper range advantage (Range 2) to dominate.
-- Low Threshold: Combat starts at HP > 35 (Down from 50).
+- Aggressive Threshold: Combat starts at HP > 30 (Down from 35).
 - EP Conscious: Use Item (1 EP), Attack (2 EP), Move (2-3 EP).
+- Fix: Removed 'drop' action (currently unsupported by server).
 """
 import random
 from bot.utils.logger import get_logger
@@ -39,8 +40,8 @@ ITEM_PRIORITY = {
 RECOVERY_ITEMS = {"medkit": 50, "bandage": 30, "emergency_food": 20, "energy_drink": 0}
 
 # ── REAPER Thresholds ────────────────────────────────────────────────
-AGGRESSION_MIN_HP = 35  # VERY AGGRESSIVE
-CRITICAL_HEAL_HP = 30
+AGGRESSION_MIN_HP = 30  # EXTREMELY AGGRESSIVE
+CRITICAL_HEAL_HP = 25
 KITING_EP_RESERVE = 2
 
 def get_weapon_bonus(equipped_weapon) -> int:
@@ -170,12 +171,17 @@ def decide_action(view: dict, can_act: bool) -> dict | None:
         drink = next((i for i in inventory if _get_item_type(i) == "energy_drink"), None)
         if drink: return {"action": "use_item", "data": {"itemId": drink["id"]}, "reason": "STAMINA: EP low"}
 
-    # ── Priority 6: STRATEGIC MOVEMENT (Hunt for Loot) ────────────
+    # ── Priority 6: STRATEGIC MOVEMENT (Pursuit/Loot) ────────────
     if ep >= move_ep_cost:
-        move_target = _choose_move_target(connections, danger_ids, visible_items, region_id, hp < 40)
+        # Pass enemies to choice logic for pursuit
+        move_target = _choose_move_target(connections, danger_ids, visible_items, region_id, enemies, hp < 40)
         if move_target:
-            return {"action": "move", "data": {"regionId": move_target}, 
-                    "reason": f"STALKING: To {move_target[:8]} for potential kills/loot"}
+            reason = f"STALKING: To {move_target[:8]}"
+            # Identify if we are moving towards an enemy
+            enemy_near = next((e for e in enemies if e.get("regionId") == move_target), None)
+            if enemy_near:
+                reason = f"PURSUIT: Chasing {enemy_near.get('name')} for the kill!"
+            return {"action": "move", "data": {"regionId": move_target}, "reason": reason}
 
     # ── Priority 7: BANKING (Rest) ────────────────────────────────
     if ep < max_ep:
@@ -194,17 +200,21 @@ def _is_in_range(target, my_region, w_range, connections) -> bool:
 def _check_pickup(items, inventory, region_id, equipped) -> dict | None:
     local = [i for i in items if i.get("regionId") == region_id]
     if not local: return None
+    
+    # Priority: Currencies first, then weapons, then healing
     local.sort(key=lambda i: ITEM_PRIORITY.get(_get_item_type(i), 0), reverse=True)
     best = local[0]
     score = ITEM_PRIORITY.get(_get_item_type(best), 0)
+    
     if score <= 0: return None
-    if len(inventory) < 10:
-        return {"action": "pickup", "data": {"itemId": best["id"]}, "reason": f"PICKUP: {_get_item_type(best)}"}
-    inv_scores = [(i, ITEM_PRIORITY.get(_get_item_type(i), 0) + (1000 if _get_item_category(i) == "currency" else 0)) for i in inventory]
-    inv_scores.sort(key=lambda x: x[1])
-    worst_inv, worst_score = inv_scores[0]
-    if score > worst_score + 20:
-        return {"action": "drop", "data": {"itemId": worst_inv["id"]}, "reason": f"SMART STORAGE: Drop {_get_item_type(worst_inv)} for {_get_item_type(best)}"}
+    
+    # If it's currency (Moltz), ALWAYS pick it up if possible
+    # Note: Currencies sometimes don't count towards the 10-slot limit in some game versions
+    is_currency = _get_item_category(best) == "currency"
+    
+    if len(inventory) < 10 or is_currency:
+        return {"action": "pickup", "data": {"itemId": best["id"]}, "reason": f"REAPING: {_get_item_type(best)}"}
+    
     return None
 
 def _check_smart_equip(inventory, equipped, targets, my_region, connections) -> dict | None:
@@ -230,16 +240,34 @@ def _find_healing_item(inventory, critical) -> dict | None:
     heals.sort(key=lambda i: RECOVERY_ITEMS[_get_item_type(i)], reverse=critical)
     return heals[0]
 
-def _choose_move_target(connections, danger_ids, items, my_region, desperate=False) -> str | None:
+def _choose_move_target(connections, danger_ids, items, my_region, enemies, desperate=False) -> str | None:
+    # 1. If desperate, look for heals nearby
     if desperate:
         for item in items:
             t = _get_item_type(item)
             if t in RECOVERY_ITEMS and RECOVERY_ITEMS[t] > 0:
                 rid = item.get("regionId")
                 if rid and rid != my_region and rid not in danger_ids: return rid
+
+    # 2. Look for high-value items (Moltz, Weapons)
     for item in items:
         rid = item.get("regionId")
-        if rid and rid != my_region and rid not in danger_ids: return rid
+        if rid and rid != my_region and rid not in danger_ids:
+            score = ITEM_PRIORITY.get(_get_item_type(item), 0)
+            if score > 100: return rid
+
+    # 3. PREDATOR PURSUIT: Move towards nearest visible enemy
+    if enemies:
+        # Move towards the first enemy we see that isn't in a danger zone
+        for enemy in enemies:
+            erid = enemy.get("regionId")
+            if erid and erid != my_region and erid not in danger_ids:
+                # Is it connected?
+                for c in connections:
+                    rid = c if isinstance(c, str) else c.get("id")
+                    if rid == erid: return rid
+    
+    # 4. Fallback: Safe movement
     safe = []
     for c in connections:
         rid = c if isinstance(c, str) else c.get("id")
@@ -247,7 +275,9 @@ def _choose_move_target(connections, danger_ids, items, my_region, desperate=Fal
             terrain = c.get("terrain", "plains") if isinstance(c, dict) else "plains"
             score = 10 if terrain in ["hills", "plains"] else 1
             safe.append((rid, score))
+    
     if safe:
         safe.sort(key=lambda x: x[1], reverse=True)
         return safe[0][0]
+    
     return None

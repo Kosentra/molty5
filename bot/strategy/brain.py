@@ -1,10 +1,11 @@
 """
 Strategy brain — main decision engine with priority-based action selection.
-v1.6.5: BLOOD REAPER EDITION
+v1.6.2: CLAW ROYALE EDITION
 - Aggressive Execution: Execute anyone with HP < 40.
 - Loot Reaping: Focus on killing players to steal their healing items.
 - Ranged Harassment: Use Sniper range advantage (Range 2) to dominate.
 - Low Threshold: Combat starts at HP > 35 (Down from 50).
+- EP Conscious: Use Item (1 EP), Attack (2 EP), Move (2-3 EP).
 """
 import random
 from bot.utils.logger import get_logger
@@ -161,11 +162,11 @@ def decide_action(view: dict, can_act: bool) -> dict | None:
     if not can_act: return None
 
     # ── Priority 5: REAPER MAINTENANCE ────────────────────────────
-    if hp < 75:
+    if hp < 75 and ep >= 1:
         heal = _find_healing_item(inventory, hp < 30)
         if heal: return {"action": "use_item", "data": {"itemId": heal["id"]}, "reason": f"MAINTENANCE: HP={hp}"}
     
-    if ep <= 2:
+    if ep <= 2 and ep >= 1:
         drink = next((i for i in inventory if _get_item_type(i) == "energy_drink"), None)
         if drink: return {"action": "use_item", "data": {"itemId": drink["id"]}, "reason": "STAMINA: EP low"}
 

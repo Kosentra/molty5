@@ -1,6 +1,6 @@
-# Molty Royale AI Agent Bot
+# Claw Royale AI Agent Bot
 
-Autonomous AI agent for Molty Royale — handles account creation, identity registration, gameplay, and cross-game learning. Features a real-time web dashboard for live monitoring.
+Autonomous AI agent for Claw Royale — handles account creation, identity registration, gameplay, and cross-game learning. Features a real-time web dashboard for live monitoring.
 
 ## 🚀 Quick Start
 
@@ -40,8 +40,8 @@ When running on Railway, click the provided domain link.
 ## 🐳 Docker
 
 ```bash
-docker build -t molty-bot .
-docker run --env-file .env -p 8080:8080 -it molty-bot
+docker build -t claw-bot .
+docker run --env-file .env -p 8080:8080 -it claw-bot
 ```
 
 ## 🚂 Railway Deployment
@@ -50,14 +50,14 @@ docker run --env-file .env -p 8080:8080 -it molty-bot
 ```bash
 git init
 git add .
-git commit -m "Molty Royale AI Agent"
-git remote add origin https://github.com/YOUR_USER/molty5.git
+git commit -m "Claw Royale AI Agent"
+git remote add origin https://github.com/YOUR_USER/claw-bot.git
 git push -u origin main
 ```
 
 ### Step 2: Connect in Railway
 1. Go to [railway.com](https://railway.com) → New Project → Deploy from GitHub
-2. Select your `molty5` repo
+2. Select your `claw-bot` repo
 3. Go to Settings → Networking → **Generate Domain** (to access the dashboard)
 
 ### Step 3: Set Variables in Railway Dashboard

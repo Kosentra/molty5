@@ -9,12 +9,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Skill / API version ──────────────────────────────────────────────
-SKILL_VERSION = "1.6.1"
+SKILL_VERSION = "1.6.2"
 
 # ── URLs ──────────────────────────────────────────────────────────────
-API_BASE = "https://cdn.moltyroyale.com/api"
-WS_URL = "wss://cdn.moltyroyale.com/ws/agent"
-WS_JOIN_URL = "wss://cdn.moltyroyale.com/ws/join"  # v1.6.1: unified join socket
+API_BASE = "https://cdn.clawroyale.ai/api"
+WS_URL = "wss://cdn.clawroyale.ai/ws/agent"
+WS_JOIN_URL = "wss://cdn.clawroyale.ai/ws/join"  # v1.6.1: unified join socket
 
 # ── Chain config (CROSS Mainnet) ──────────────────────────────────────
 CROSS_CHAIN_ID = 612055
@@ -49,7 +49,7 @@ CREDENTIALS_FILE = DEV_AGENT_DIR / "credentials.json"
 OWNER_INTAKE_FILE = DEV_AGENT_DIR / "owner-intake.json"
 AGENT_WALLET_FILE = DEV_AGENT_DIR / "agent-wallet.json"
 OWNER_WALLET_FILE = DEV_AGENT_DIR / "owner-wallet.json"
-MEMORY_DIR = Path.home() / ".molty-royale"
+MEMORY_DIR = Path.home() / ".claw-royale"
 MEMORY_FILE = MEMORY_DIR / "molty-royale-context.json"
 
 # ── Environment variables ─────────────────────────────────────────────

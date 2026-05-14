@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Skill / API version ──────────────────────────────────────────────
-SKILL_VERSION = "1.6.2"
+SKILL_VERSION = "1.6.3"
 
 # ── URLs ──────────────────────────────────────────────────────────────
 API_BASE = "https://cdn.clawroyale.ai/api"
@@ -75,3 +75,10 @@ AUTO_IDENTITY = os.getenv("AUTO_IDENTITY", "true").lower() == "true"         # Q
 # ── Telegram Notifier ──────────────────────────────────────────────
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+# ── AI Brain (LLM) ──────────────────────────────────────────────
+USE_AI_BRAIN = os.getenv("USE_AI_BRAIN", "true").lower() == "true"
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+AI_MODEL = "llama-3.3-70b-versatile"  # Groq high-speed model

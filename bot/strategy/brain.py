@@ -82,7 +82,23 @@ def learn_from_map(view: dict):
 def mark_facility_used(facility_id: str):
     if facility_id: _used_facilities.add(facility_id)
 
-def decide_action(view: dict, can_act: bool) -> dict | None:
+# ── AI Brain Integration ─────────────────────────────────────────────
+async def decide_action(view: dict, can_act: bool) -> dict | None:
+    """Main decision engine. Uses AI Brain (LLM) if enabled, else falls back to local rules."""
+    if USE_AI_BRAIN:
+        # Try AI Brain first (Strategic Layer)
+        from bot.strategy.ai_brain import get_ai_decision
+        ai_decision = await get_ai_decision(view)
+        if ai_decision:
+            # Basic validation of AI response
+            if ai_decision.get("action"):
+                return ai_decision
+
+    # Fallback to local rule-based brain (Tactical Layer)
+    return _decide_action_local(view, can_act)
+
+def _decide_action_local(view: dict, can_act: bool) -> dict | None:
+    """Original rule-based logic for fast, zero-latency fallback."""
     self_data = view.get("self", {})
     my_id = self_data.get("id")
     hp = self_data.get("hp", 0)

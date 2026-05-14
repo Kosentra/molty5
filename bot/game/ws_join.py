@@ -62,6 +62,7 @@ class JoinEngine:
         """
         api_key = get_api_key()
         headers = {
+            "X-API-Key": api_key,
             "Authorization": f"mr-auth {api_key}",
             "X-Version": SKILL_VERSION,
         }
@@ -149,11 +150,9 @@ class JoinEngine:
                 elif decision == "PAID_ONLY":
                     actual_entry = "paid"
 
-                hello = {"type": "hello", "entryType": actual_entry}
-                if actual_entry == "paid" and self.mode == "onchain":
-                    hello["mode"] = "onchain"
+                hello = {"type": "hello", "entryType": actual_entry, "mode": self.mode}
                 await self._send(hello)
-                log.info("Sent hello: entryType=%s", actual_entry)
+                log.info("Sent hello: entryType=%s mode=%s", actual_entry, self.mode)
 
         # ── join state machine messages ───────────────────────────────
         elif msg_type == "queued":
@@ -385,7 +384,7 @@ class JoinEngine:
 
         # Run strategy brain
         can_act = self.action_sender.can_send_cooldown_action()
-        decision = decide_action(view, can_act)
+        decision = await decide_action(view, can_act)
 
         if decision is None:
             return

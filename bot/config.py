@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Skill / API version ──────────────────────────────────────────────
-SKILL_VERSION = "1.6.2"  # Verified working on 2026-05-15
+SKILL_VERSION = os.getenv("SKILL_VERSION", "1.6.2")  # Verified working on 2026-05-15
 
 # ── URLs ──────────────────────────────────────────────────────────────
 API_BASE = "https://cdn.clawroyale.ai/api"

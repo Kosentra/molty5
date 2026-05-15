@@ -179,6 +179,12 @@ class Heartbeat:
 
         creds = load_credentials(d_dir) or {}
         owner_eoa = creds.get("owner_eoa", "")
+        agent_eoa = creds.get("agent_wallet_address", "")
+
+        if not owner_eoa:
+            log.error("[%s] ❌ No Owner EOA found in credentials! Setup cannot proceed.", self._agent_key)
+            await asyncio.sleep(60)
+            return
 
         log.info("[%s] 🆔 Handling NO_IDENTITY — Starting setup pipeline...", self._agent_key)
 
@@ -188,11 +194,11 @@ class Heartbeat:
 
         # 2. Ensure Whitelist
         if AUTO_WHITELIST:
-            wl_ok = await ensure_whitelist(self.api, d_dir)
+            wl_ok = await ensure_whitelist(self.api, owner_eoa, agent_eoa, d_dir)
             if not wl_ok:
                 log.info(
-                    "⏳ Whitelist pending — Owner EOA may need CROSS for gas. "
-                    "Fund Owner EOA: %s then bot will retry in 2 minutes.", owner_eoa
+                    "[%s] ⏳ Whitelist pending — Owner EOA may need CROSS for gas. "
+                    "Fund Owner EOA: %s then bot will retry in 2 minutes.", self._agent_key, owner_eoa
                 )
                 await asyncio.sleep(120)
                 return

@@ -111,7 +111,9 @@ async def run_first_run_intake(data_dir: str = None) -> dict:
 
 async def ensure_account_ready(data_dir: str = None) -> dict:
     creds = _restore_from_env(data_dir)
-    if creds and creds.get("api_key"): return creds
+    if creds and creds.get("api_key"):
+        if not ADVANCED_MODE or creds.get("owner_eoa"):
+            return creds
     if not is_first_run(data_dir):
         creds = load_credentials(data_dir)
         if creds and creds.get("api_key"): return creds

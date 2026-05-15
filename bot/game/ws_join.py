@@ -196,7 +196,11 @@ class JoinEngine:
                     if self.entry_type == "paid":
                         log.warning("Server says FREE_ONLY — falling back to free")
                 elif decision == "PAID_ONLY":
-                    actual_entry = "paid"
+                    if self.entry_type == "free":
+                        log.info("Server suggests PAID_ONLY, but forcing FREE mode as requested.")
+                        actual_entry = "free"
+                    else:
+                        actual_entry = "paid"
 
                 hello = {"type": "hello", "entryType": actual_entry}
                 if actual_entry == "paid":

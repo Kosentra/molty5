@@ -42,9 +42,6 @@ class Heartbeat:
     async def run(self):
         """Entry point — runs the heartbeat loop indefinitely."""
         log.info("═══════════════════════════════════════════")
-        log.info("  MOLTY ROYALE AI AGENT — STARTING")
-        log.info("═══════════════════════════════════════════")
-
         # Log active config (answers to setup.md First-Run Intake)
         log.info("[%s] Config (First-Run Intake):", self._agent_key)
         log.info("[%s]   ADVANCED_MODE   = %s", self._agent_key, ADVANCED_MODE)
@@ -53,6 +50,10 @@ class Heartbeat:
         log.info("[%s]   ENABLE_MEMORY   = %s", self._agent_key, ENABLE_MEMORY)
         log.info("[%s]   AUTO_IDENTITY   = %s", self._agent_key, AUTO_IDENTITY)
         log.info("[%s]   ROOM_MODE       = %s", self._agent_key, ROOM_MODE)
+
+        log.info("═══════════════════════════════════════════")
+        log.info("  MOLTY ROYALE AI AGENT — STARTING")
+        log.info("═══════════════════════════════════════════")
 
         if not self.api_key:
             # Phase 0: First-run intake + account setup (retry until success)

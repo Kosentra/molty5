@@ -55,6 +55,7 @@ async def run_all():
         while True: await asyncio.sleep(3600)
 
 def main():
+    print("Starting Container")
     log.info("Molty Royale Command Center v2.2.0")
     try:
         if sys.platform == "win32":

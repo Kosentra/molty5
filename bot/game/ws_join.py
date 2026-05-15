@@ -153,6 +153,9 @@ class JoinEngine:
 
                 # Normal transient disconnect
                 retry_count += 1
+                if code == 4002:
+                    log.error("❌ SERVER REJECTED FREE MODE: Reason=ENTRYTYPE_NOT_PERMITTED. "
+                              "Your account is likely forced to play PAID rooms because your balance is >= 500 sMoltz.")
                 log.warning("WS closed: code=%s reason=%s (retry %d/%d)",
                             code, e.reason, retry_count, max_retries)
                 if self._ping_task:

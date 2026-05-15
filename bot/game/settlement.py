@@ -61,6 +61,7 @@ async def settle_game(game_result: dict, entry_type: str, memory: AgentMemory):
     await memory.save()
 
     # Telegram Report
+    from bot.dashboard.state import dashboard_state
     status_icon = "🏆" if is_winner else "💀"
     msg = (
         f"{status_icon} <b>Game Over ({entry_type})</b>\n"
@@ -68,7 +69,7 @@ async def settle_game(game_result: dict, entry_type: str, memory: AgentMemory):
         f"🚩 Rank: <b>{final_rank}</b>\n"
         f"⚔️ Kills: <b>{kills}</b>\n"
         f"💰 Earned: <b>{smoltz_earned}</b> sMoltz\n"
-        f"✨ Total: <b>{memory.overall_history.get('total_smoltz', 0)}</b>"
+        f"✨ Total: <b>{dashboard_state.total_smoltz}</b>"
     )
     await tg_notifier.send_message(msg)
 

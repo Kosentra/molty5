@@ -11,14 +11,14 @@ from bot.utils.logger import get_logger
 log = get_logger(__name__)
 
 
-async def ensure_molty_wallet(api: MoltyAPI, owner_eoa: str) -> str:
+async def ensure_molty_wallet(api: MoltyAPI, owner_eoa: str, data_dir: str = None) -> str:
     """
     Create or recover MoltyRoyale Wallet. Returns wallet address or "".
     Per setup.md §6: one wallet per Owner EOA, don't blindly create.
     Never crashes.
     """
     # Step 1: Try to get existing wallet from credentials
-    creds = load_credentials() or {}
+    creds = load_credentials(data_dir) or {}
     existing = creds.get("molty_royale_wallet", "")
     if existing:
         log.info("MoltyRoyale Wallet already known: %s", existing)
@@ -31,13 +31,13 @@ async def ensure_molty_wallet(api: MoltyAPI, owner_eoa: str) -> str:
         log.info("✅ MoltyRoyale Wallet created: %s", wallet_addr)
 
         creds["molty_royale_wallet"] = wallet_addr
-        save_credentials(creds)
+        save_credentials(creds, data_dir)
         return wallet_addr
 
     except APIError as e:
         if e.code in ("CONFLICT", "WALLET_ALREADY_EXISTS"):
             log.info("MoltyRoyale Wallet already exists — recovering address...")
-            return await _recover_wallet_address(owner_eoa, creds)
+            return await _recover_wallet_address(owner_eoa, creds, data_dir)
 
         if e.code == "AGENT_EOA_EQUALS_OWNER_EOA":
             log.error(
@@ -54,14 +54,14 @@ async def ensure_molty_wallet(api: MoltyAPI, owner_eoa: str) -> str:
         return ""
 
 
-async def _recover_wallet_address(owner_eoa: str, creds: dict) -> str:
+async def _recover_wallet_address(owner_eoa: str, creds: dict, data_dir: str = None) -> str:
     """Try to recover wallet address on-chain via WalletFactory.getWallets()."""
     try:
         wallet_addr = await get_molty_wallet_address(owner_eoa)
         if wallet_addr:
             log.info("✅ Recovered MoltyRoyale Wallet: %s", wallet_addr)
             creds["molty_royale_wallet"] = wallet_addr
-            save_credentials(creds)
+            save_credentials(creds, data_dir)
             return wallet_addr
     except Exception as e:
         log.warning("On-chain wallet recovery failed: %s", e)

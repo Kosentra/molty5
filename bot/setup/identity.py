@@ -11,7 +11,7 @@ from bot.utils.logger import get_logger
 log = get_logger(__name__)
 
 
-async def ensure_identity(api: MoltyAPI) -> bool:
+async def ensure_identity(api: MoltyAPI, data_dir: str = None) -> bool:
     """
     Ensure ERC-8004 identity is registered.
     Returns True if identity is set. Never crashes.
@@ -34,7 +34,7 @@ async def ensure_identity(api: MoltyAPI) -> bool:
         return False
 
     # Advanced mode: auto-register
-    owner_pk = get_owner_private_key()
+    owner_pk = get_owner_private_key(data_dir)
     if not owner_pk:
         log.error("Advanced mode but no Owner private key available")
         return False
@@ -53,9 +53,9 @@ async def ensure_identity(api: MoltyAPI) -> bool:
         result = await api.post_identity(token_id)
         log.info("✅ ERC-8004 identity registered: %s", result)
 
-        creds = load_credentials() or {}
+        creds = load_credentials(data_dir) or {}
         creds["erc8004_token_id"] = token_id
-        save_credentials(creds)
+        save_credentials(creds, data_dir)
         return True
 
     except APIError as e:

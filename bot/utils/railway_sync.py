@@ -28,9 +28,11 @@ def is_setup_complete() -> bool:
     return os.getenv("SETUP_COMPLETE", "").lower() == "true"
 
 
-def _get_railway_config() -> dict | None:
-    """Get Railway config from env vars. Returns None if not on Railway or missing token."""
-    token = os.getenv("RAILWAY_API_TOKEN", "")
+def _get_railway_config(suffix: str = "") -> dict | None:
+    """Get Railway config from env vars with suffix support."""
+    # Priority: Suffixed token (e.g. RAILWAY_API_TOKEN_2), then global
+    token = os.getenv(f"RAILWAY_API_TOKEN{suffix}", os.getenv("RAILWAY_API_TOKEN", ""))
+    
     project_id = os.getenv("RAILWAY_PROJECT_ID", "")
     env_id = os.getenv("RAILWAY_ENVIRONMENT_ID", "")
     service_id = os.getenv("RAILWAY_SERVICE_ID", "")
@@ -38,9 +40,7 @@ def _get_railway_config() -> dict | None:
     if not all([token, project_id, env_id, service_id]):
         if is_railway() and not token:
             log.warning(
-                "⚠️ RAILWAY_API_TOKEN not set. Cannot auto-save credentials. "
-                "Create one at: https://railway.com/account/tokens → "
-                "then add RAILWAY_API_TOKEN to Railway Variables."
+                "⚠️ RAILWAY_API_TOKEN%s not set. Cannot auto-save credentials.", suffix
             )
         return None
 
@@ -52,12 +52,11 @@ def _get_railway_config() -> dict | None:
     }
 
 
-async def _collection_upsert(variables_dict: dict) -> bool:
+async def _collection_upsert(variables_dict: dict, suffix: str = "") -> bool:
     """
     Save ALL variables in ONE API call using variableCollectionUpsert.
-    This triggers only ONE redeploy (not one per variable).
     """
-    config = _get_railway_config()
+    config = _get_railway_config(suffix)
     if not config:
         return False
 
@@ -103,19 +102,23 @@ async def _collection_upsert(variables_dict: dict) -> bool:
         return False
 
 
-async def sync_all_to_railway(creds: dict, agent_pk: str, owner_pk: str = ""):
+async def sync_all_to_railway(creds: dict, agent_pk: str, owner_pk: str = "", suffix: str = ""):
     """
     ONE-TIME sync of ALL variables to Railway after first-run.
     Combines config + credentials + private keys into a SINGLE API call.
     Uses variableCollectionUpsert = only 1 redeploy for all variables.
     Sets SETUP_COMPLETE=true in the same call to prevent redeploy loop.
+    
+    suffix: Optional string like '_2', '_3' to support multi-agent.
     """
     if not is_railway():
         return
 
     # Skip if already synced (prevents infinite redeploy loop)
-    if is_setup_complete():
-        log.info("Railway sync already done (SETUP_COMPLETE=true). Skipping.")
+    # For multi-agent, we check if the specific API_KEY_N is set
+    setup_flag = f"SETUP_COMPLETE{suffix}"
+    if os.getenv(setup_flag, "").lower() == "true":
+        log.info("[%s] Railway sync already done. Skipping.", setup_flag)
         return
 
     config = _get_railway_config()
@@ -132,29 +135,23 @@ async def sync_all_to_railway(creds: dict, agent_pk: str, owner_pk: str = ""):
 
     # Build complete variables map — ALL in one call = ONE redeploy
     all_vars = {
-        # Config
+        # Config (only sync these for primary agent or if desired)
         "ROOM_MODE": ROOM_MODE,
-        "ADVANCED_MODE": str(ADVANCED_MODE).lower(),
-        "AUTO_WHITELIST": str(AUTO_WHITELIST).lower(),
-        "AUTO_SC_WALLET": str(AUTO_SC_WALLET).lower(),
-        "ENABLE_MEMORY": str(ENABLE_MEMORY).lower(),
-        "ENABLE_AGENT_TOKEN": str(ENABLE_AGENT_TOKEN).lower(),
-        "AUTO_IDENTITY": str(AUTO_IDENTITY).lower(),
         "LOG_LEVEL": LOG_LEVEL,
         "SKILL_VERSION": SKILL_VERSION,
-        # Credentials
-        "API_KEY": creds.get("api_key", ""),
-        "AGENT_NAME": creds.get("agent_name", ""),
-        "AGENT_WALLET_ADDRESS": creds.get("agent_wallet_address", ""),
-        "OWNER_EOA": creds.get("owner_eoa", ""),
-        # Private keys
-        "AGENT_PRIVATE_KEY": agent_pk,
-        "OWNER_PRIVATE_KEY": owner_pk,
+        # Credentials with suffix support
+        f"API_KEY{suffix}": creds.get("api_key", ""),
+        f"AGENT_NAME{suffix}": creds.get("agent_name", ""),
+        f"AGENT_WALLET_ADDRESS{suffix}": creds.get("agent_wallet_address", ""),
+        f"OWNER_EOA{suffix}": creds.get("owner_eoa", ""),
+        # Private keys with suffix support
+        f"AGENT_PRIVATE_KEY{suffix}": agent_pk,
+        f"OWNER_PRIVATE_KEY{suffix}": owner_pk,
         # Flag to prevent redeploy loop
-        "SETUP_COMPLETE": "true",
+        f"SETUP_COMPLETE{suffix}": "true",
     }
 
-    ok = await _collection_upsert(all_vars)
+    ok = await _collection_upsert(all_vars, suffix=suffix)
     if ok:
         log.info("✅ All variables synced to Railway (1 API call = 1 redeploy). Credentials saved!")
     else:

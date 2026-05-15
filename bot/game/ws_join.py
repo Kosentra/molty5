@@ -37,10 +37,12 @@ class JoinEngine:
     One socket handles matchmaking queue AND full gameplay.
     """
 
-    def __init__(self, entry_type: str = "free", mode: str = "offchain"):
+    def __init__(self, entry_type: str = "free", mode: str = "offchain", api_key: str = None):
         self.entry_type = entry_type   # "free" | "paid"
         self.mode = mode               # "offchain" | "onchain"
+        self.api_key = api_key
         self.action_sender = ActionSender()
+        self.needs_identity_reset = False
         self.ws = None
         self.game_result = None
         self.last_view = None
@@ -55,12 +57,20 @@ class JoinEngine:
         self.game_id = ""
         self.agent_id = ""
 
+    # Close codes that should NOT trigger rapid retry
+    _FATAL_CODES = {
+        4007,  # ACCOUNT_SUSPENDED
+        4001,  # BLOCKED
+        4003,  # HELLO_TIMEOUT
+    }
+    _FATAL_REASONS = {"ACCOUNT_SUSPENDED", "BLOCKED"}
+
     async def run(self) -> dict:
         """
         Main entry point. Connects to /ws/join and runs until game_ended.
         Returns game result dict.
         """
-        api_key = get_api_key()
+        api_key = self.api_key or get_api_key()
         headers = {
             "X-API-Key": api_key,
             "Authorization": f"mr-auth {api_key}",
@@ -70,8 +80,11 @@ class JoinEngine:
         self._running = True
         retry_count = 0
         max_retries = 5
+        # Only reset retry_count after we actually joined a game (not just TCP connect)
+        _actually_joined = False
 
         while self._running and retry_count < max_retries:
+            _actually_joined = False
             try:
                 log.info("Connecting /ws/join (entryType=%s mode=%s)...",
                          self.entry_type, self.mode)
@@ -82,7 +95,6 @@ class JoinEngine:
                     max_size=2 ** 20,
                 ) as ws:
                     self.ws = ws
-                    retry_count = 0
                     log.info("✅ /ws/join connected")
 
                     # Start ping keepalive
@@ -96,6 +108,11 @@ class JoinEngine:
                                 continue
                             msg_type = msg.get("type", "unknown")
                             log.debug("WS recv: type=%s", msg_type)
+                            # Mark as joined once assigned to reset retry counter
+                            if msg_type in ("assigned", "agent_view", "waiting") and not _actually_joined:
+                                _actually_joined = True
+                                retry_count = 0
+                                log.info("Game joined — retry counter reset")
                             result = await self._handle_message(msg)
                             if result is not None:
                                 self._running = False
@@ -104,9 +121,40 @@ class JoinEngine:
                             log.warning("Non-JSON WS message: %s", raw_msg[:100])
 
             except websockets.exceptions.ConnectionClosed as e:
+                code = e.code
+                reason = (e.reason or "").split(":")[0].strip()
+
+                # Fatal errors: suspend/block — long backoff, count as retry
+                if code in self._FATAL_CODES or reason in self._FATAL_REASONS:
+                    retry_count += 1
+                    wait = min(60 * retry_count, 300)  # 1min, 2min, 3min, 4min, 5min
+                    log.warning(
+                        "WS closed: code=%s reason=%s — FATAL error, backing off %ds (retry %d/%d)",
+                        code, e.reason, wait, retry_count, max_retries,
+                    )
+                    if self._ping_task:
+                        self._ping_task.cancel()
+                    await asyncio.sleep(wait)
+                    continue
+
+                # PRECHECK_BLOCKED (1013): temporary block, moderate backoff
+                if code == 1013:
+                    retry_count += 1
+                    wait = min(30 * retry_count, 120)
+                    log.warning(
+                        "WS closed: code=%s reason=%s — 1013 INTERNAL_ERROR detected. Triggering identity reset...",
+                        code, e.reason
+                    )
+                    self.needs_identity_reset = True
+                    if self._ping_task:
+                        self._ping_task.cancel()
+                    await asyncio.sleep(wait)
+                    continue
+
+                # Normal transient disconnect
                 retry_count += 1
                 log.warning("WS closed: code=%s reason=%s (retry %d/%d)",
-                            e.code, e.reason, retry_count, max_retries)
+                            code, e.reason, retry_count, max_retries)
                 if self._ping_task:
                     self._ping_task.cancel()
                 await asyncio.sleep(min(2 ** retry_count, 30))

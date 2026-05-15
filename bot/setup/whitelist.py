@@ -13,7 +13,7 @@ from bot.utils.logger import get_logger
 log = get_logger(__name__)
 
 
-async def ensure_whitelist(api: MoltyAPI, owner_eoa: str, agent_eoa: str) -> bool:
+async def ensure_whitelist(api: MoltyAPI, owner_eoa: str, agent_eoa: str, data_dir: str = None) -> bool:
     """
     Request whitelist + auto-approve if advanced mode.
     Returns True if whitelisted. Never crashes.
@@ -52,7 +52,7 @@ async def ensure_whitelist(api: MoltyAPI, owner_eoa: str, agent_eoa: str) -> boo
 
     # Step 2: Auto-approve if advanced mode
     if ADVANCED_MODE:
-        owner_pk = get_owner_private_key()
+        owner_pk = get_owner_private_key(data_dir)
         if not owner_pk:
             log.error("Advanced mode but no Owner private key found")
             return False

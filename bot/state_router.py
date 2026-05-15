@@ -48,7 +48,7 @@ def determine_state(me_response: dict) -> tuple[str, dict]:
         balance = me_response.get("balance", 0)
         if balance >= 500:  # PAID_ENTRY_FEE_SMOLTZ from economy.md
             log.info("Paid ready: balance=%d sMoltz", balance)
-            return READY_PAID, {"balance": balance}
+            return READY_PAID, {"balance": balance, "erc8004Id": erc8004_id}
 
     # Default to free
     log.info("Ready for free play")
@@ -56,4 +56,5 @@ def determine_state(me_response: dict) -> tuple[str, dict]:
         "balance": me_response.get("balance", 0),
         "wallet_address": readiness.get("walletAddress"),
         "whitelist_approved": readiness.get("whitelistApproved", False),
+        "erc8004Id": erc8004_id,
     }

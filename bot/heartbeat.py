@@ -255,9 +255,14 @@ class Heartbeat:
         self.memory.set_temp_game("joining")
         await self.memory.save()
 
-        # v1.6.1: Paid rooms MUST be onchain
-        mode_to_use = "onchain" if room_type == "paid" else "offchain"
+        # v1.6.1: Default to offchain for sMoltz usage (Path A)
+        mode_to_use = "offchain" 
         log.info("Starting JoinEngine (entry=%s, mode=%s)...", room_type, mode_to_use)
+
+        # Ensure Identity is registered BEFORE JoinEngine (v1.6.2 requirement)
+        if not ctx.get("erc8004Id"):
+            log.info("[%s] 🆔 Identity missing in state — attempting registration...", self._agent_key)
+            await ensure_identity(self.api, d_dir)
 
         # Run unified join + gameplay engine (v1.6.1)
         engine = JoinEngine(entry_type=room_type, mode=mode_to_use, api_key=self.api_key)

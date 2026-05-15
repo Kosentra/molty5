@@ -1,5 +1,5 @@
 """
-Room selector — forced to FREE only as per user request.
+Room selector — dynamic mode.
 """
 from bot.utils.logger import get_logger
 
@@ -14,7 +14,7 @@ def select_room(me_data: dict, rooms_data: list = None) -> str:
     """
     from bot.config import ROOM_MODE
     
-    mode = ROOM_MODE.lower()
+    mode = str(ROOM_MODE).lower()
     balance = me_data.get("balance", 0)
     
     if mode == "paid":
@@ -25,7 +25,7 @@ def select_room(me_data: dict, rooms_data: list = None) -> str:
         log.info("Room mode: FORCED FREE ONLY")
         return "free"
         
-    # Auto mode logic
+    # Auto mode logic (Default)
     if balance >= 500:
         log.info("Room mode: AUTO (Balance %d >= 500) -> Choosing PAID", balance)
         return "paid"

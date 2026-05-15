@@ -1,245 +1,111 @@
 """
-Heartbeat loop — main orchestration per heartbeat.md.
-State machine: setup → join → play → settle → repeat.
-Respects First-Run Intake config flags for Railway/Docker deployment.
+Heartbeat service — orchestrates the agent's lifecycle.
 """
 import asyncio
-import random
-from bot.api_client import MoltyAPI, APIError
-from bot.dashboard.state import dashboard_state
-from bot.state_router import determine_state, NO_ACCOUNT, NO_IDENTITY, IN_GAME, READY_PAID, READY_FREE
-from bot.setup.account_setup import ensure_account_ready
-from bot.setup.wallet_setup import ensure_molty_wallet
-from bot.setup.whitelist import ensure_whitelist
-from bot.setup.identity import ensure_identity
+import os
+import json
+from datetime import datetime
+
+from bot.utils.logger import get_logger
+from bot.api_client import MoltyAPI
+from bot.state_router import (
+    determine_state, NO_ACCOUNT, NO_IDENTITY, IN_GAME, READY_PAID, READY_FREE, ERROR
+)
 from bot.game.room_selector import select_room
-from bot.game.free_join import join_free_game
-from bot.game.paid_join import join_paid_game
-from bot.game.websocket_engine import WebSocketEngine
-from bot.game.settlement import settle_game
+from bot.game.ws_join import JoinEngine
 from bot.memory.agent_memory import AgentMemory
-from bot.credentials import load_credentials, get_api_key
+from bot.dashboard.state import dashboard_state
+from bot.setup.identity import ensure_identity
+
 from bot.config import (
     ADVANCED_MODE, ROOM_MODE, AUTO_WHITELIST,
     AUTO_SC_WALLET, ENABLE_MEMORY, AUTO_IDENTITY,
 )
-from bot.utils.logger import get_logger
 
 log = get_logger(__name__)
 
-
 class Heartbeat:
-    """Main heartbeat loop — runs forever, manages the full agent lifecycle."""
-
-    def __init__(self, api_key: str = None, agent_name: str = "Agent", dashboard_key: str = "agent-1"):
+    def __init__(self, api_key: str, agent_name: str = "agent-1"):
         self.api_key = api_key
-        self.api: MoltyAPI | None = None
-        self.memory = AgentMemory()
+        self.api = MoltyAPI(api_key)
         self.running = True
-        self._agent_key = dashboard_key
+        self._agent_key = None  # Will be set based on wallet or name
         self._agent_name = agent_name
+        self.memory = AgentMemory(agent_name)
+        self.retry_count = 0
 
     async def run(self):
-        """Entry point — runs the heartbeat loop indefinitely."""
         log.info("═══════════════════════════════════════════")
-        # Log active config (answers to setup.md First-Run Intake)
-        log.info("[%s] Config (First-Run Intake):", self._agent_key)
-        log.info("[%s]   ADVANCED_MODE   = %s", self._agent_key, ADVANCED_MODE)
-        log.info("[%s]   AUTO_SC_WALLET  = %s", self._agent_key, AUTO_SC_WALLET)
-        log.info("[%s]   AUTO_WHITELIST  = %s", self._agent_key, AUTO_WHITELIST)
-        log.info("[%s]   ENABLE_MEMORY   = %s", self._agent_key, ENABLE_MEMORY)
-        log.info("[%s]   AUTO_IDENTITY   = %s", self._agent_key, AUTO_IDENTITY)
-        log.info("[%s]   ROOM_MODE       = %s", self._agent_key, ROOM_MODE)
-
+        log.info("[agent-1] Config (First-Run Intake):")
+        log.info("[agent-1]   ADVANCED_MODE   = %s", ADVANCED_MODE)
+        log.info("[agent-1]   AUTO_SC_WALLET  = %s", AUTO_SC_WALLET)
+        log.info("[agent-1]   AUTO_WHITELIST  = %s", AUTO_WHITELIST)
+        log.info("[agent-1]   ENABLE_MEMORY   = %s", ENABLE_MEMORY)
+        log.info("[agent-1]   AUTO_IDENTITY   = %s", AUTO_IDENTITY)
+        log.info("[agent-1]   ROOM_MODE       = %s", ROOM_MODE)
         log.info("═══════════════════════════════════════════")
         log.info("  MOLTY ROYALE AI AGENT — STARTING")
         log.info("═══════════════════════════════════════════")
 
-        if not self.api_key:
-            # Phase 0: First-run intake + account setup (retry until success)
-            creds = None
-            while self.running and not creds:
-                try:
-                    # data_dir mapping: "agent-1" -> "dev-agent", "agent-2" -> "dev-agent-2"
-                    d_dir = self._agent_key.replace("agent", "dev-agent") if self._agent_key != "agent-1" else "dev-agent"
-                    creds = await ensure_account_ready(data_dir=d_dir)
-                    self.api_key = creds.get("api_key", "") or get_api_key(data_dir=d_dir)
-                    if not self.api_key:
-                        log.error("[%s] No API key available. Retrying in 60s...", self._agent_key)
-                        await asyncio.sleep(60)
-                except Exception as e:
-                    log.error("[%s] Account setup error: %s. Retrying in 60s...", self._agent_key, e)
-                    await asyncio.sleep(60)
-        else:
-            creds = {"api_key": self.api_key, "agent_name": self._agent_name}
-
-        if not self.running:
-            return
-
-        self.api = MoltyAPI(self.api_key)
-
-        # Feed dashboard
-        dashboard_state.bots_running = 1
-        dashboard_state.add_log("Bot started", "info")
-
-        # Load memory (if enabled)
         if ENABLE_MEMORY:
             await self.memory.load()
-            if creds.get("agent_name"):
-                self.memory.set_agent_name(creds["agent_name"])
-        else:
-            log.info("Memory system disabled (ENABLE_MEMORY=false)")
 
-        # Main loop — NEVER exits, NEVER crashes
-        consecutive_errors = 0
         while self.running:
             try:
                 await self._heartbeat_cycle()
-                consecutive_errors = 0  # Reset on success
-            except KeyboardInterrupt:
-                log.info("Shutdown requested")
-                self.running = False
+                self.retry_count = 0  # Reset on success
+                await asyncio.sleep(15)  # Healthy interval
             except Exception as e:
-                consecutive_errors += 1
-                # Escalating backoff: 10s → 30s → 60s → 120s
-                wait = min(10 * (2 ** min(consecutive_errors - 1, 4)), 120)
-                log.error("Heartbeat error (#%d): %s. Retrying in %ds...",
-                          consecutive_errors, e, wait)
-                await asyncio.sleep(wait)
-
-        if self.api:
-            await self.api.close()
-        log.info("Agent stopped.")
+                self.retry_count += 1
+                wait_time = min(120, 10 * self.retry_count)
+                log.error("Heartbeat error (#%d): %s. Retrying in %ds...", 
+                          self.retry_count, str(e), wait_time)
+                await asyncio.sleep(wait_time)
 
     async def _heartbeat_cycle(self):
-        """Single heartbeat cycle: check state → route → act."""
-        # Step 1: GET /accounts/me
-        try:
-            me = await self.api.get_accounts_me()
-        except APIError as e:
-            if e.status == 401:
-                log.error("Invalid API key. Re-run setup.")
-                self.running = False
-                return
-            raise
+        # 1. Get status
+        me = await self.api.get_accounts_me()
+        
+        # Determine agent key for dashboard
+        if not self._agent_key:
+            readiness = me.get("readiness", {})
+            self._agent_key = readiness.get("walletAddress") or me.get("id") or self._agent_name
 
-        # Step 2: Determine state
+        # 2. Determine state
         state, ctx = determine_state(me)
         log.info("[%s] State: %s", self._agent_key, state)
 
-        # Feed dashboard with account info — use CONSISTENT key
-        self._agent_key = str(me.get("agentId", me.get("id", "agent-1")))
-        self._agent_name = me.get("agentName", me.get("name", "Agent"))
-        
-        balance = me.get("balance", 0)
-        moltz = me.get("moltz", 0)
-        cross = me.get("cross", 0)
-        
-        # Per-agent dashboard update
-        dashboard_state.update_agent(self._agent_key, {
-            "name": self._agent_name,
-            "status": "playing" if state == IN_GAME else "idle",
-            "smoltz": balance,
-            "moltz": moltz,
-            "cross": cross,
-            "whitelisted": state != NO_IDENTITY,
-        })
-
-        # Aggregate total update (approximate since it's per-heartbeat)
-        # In a real multi-agent, we'd sum these, but for now we just 
-        # ensure the individual agent views are correct.
-        dashboard_state.total_smoltz = sum(a.get("smoltz", 0) for a in dashboard_state.agents.values())
-        dashboard_state.total_moltz = sum(a.get("moltz", 0) for a in dashboard_state.agents.values())
-        dashboard_state.total_cross = sum(a.get("cross", 0) for a in dashboard_state.agents.values())
-
-        # Step 3: Route based on state
-        d_dir = self._agent_key.replace("agent", "dev-agent") if self._agent_key != "agent-1" else "dev-agent"
-        
-        if state == NO_IDENTITY:
-            await self._handle_no_identity(me, d_dir)
-            return
-
+        # 3. Handle state
         if state == IN_GAME:
             await self._handle_in_game(ctx)
-            return
-
-        if state in (READY_FREE, READY_PAID):
+        elif state in (READY_FREE, READY_PAID):
             await self._handle_ready(me, state)
-            return
-
-    async def _handle_no_identity(self, me: dict, d_dir: str):
-        """Setup pipeline: wallet → whitelist → identity. Respects config flags."""
-        from bot.credentials import load_credentials
-        from bot.setup.whitelist import ensure_whitelist
-        from bot.setup.identity import ensure_identity
-
-        creds = load_credentials(d_dir) or {}
-        owner_eoa = creds.get("owner_eoa", "")
-        agent_eoa = creds.get("agent_wallet_address", "")
-
-        # Fallback to env if missing in credentials
-        if not owner_eoa:
-            from bot.config import OWNER_EOA
-            owner_eoa = OWNER_EOA
-
-        if not owner_eoa:
-            log.info("[%s] 🆔 Handling NO_IDENTITY — Starting setup pipeline...", self._agent_key)
-            # Try to ensure account is fully ready again
-            from bot.setup.account_setup import ensure_account_ready
-            creds = await ensure_account_ready(d_dir)
-            owner_eoa = creds.get("owner_eoa", "")
-            agent_eoa = creds.get("agent_wallet_address", "")
-
-        if not owner_eoa:
-            log.error("[%s] ❌ No Owner EOA found. Please set OWNER_EOA in env.", self._agent_key)
-            await asyncio.sleep(60)
-            return
-
-        log.info("[%s] 🆔 Handling NO_IDENTITY — Starting setup pipeline...", self._agent_key)
-
-        # 1. Ensure Wallets (Agent + SC Wallet)
-        if AUTO_SC_WALLET:
-            await ensure_molty_wallet(self.api, owner_eoa, d_dir)
-
-        # 2. Ensure Whitelist
-        if AUTO_WHITELIST:
-            wl_ok = await ensure_whitelist(self.api, owner_eoa, agent_eoa, d_dir)
-            if not wl_ok:
-                log.info(
-                    "[%s] ⏳ Whitelist pending — Owner EOA may need CROSS for gas. "
-                    "Fund Owner EOA: %s then bot will retry in 2 minutes.", self._agent_key, owner_eoa
-                )
-                await asyncio.sleep(120)
-                return
+        elif state == NO_IDENTITY:
+            await self._handle_no_identity()
+        elif state == ERROR:
+            log.error("[%s] API reported error state. Checking config...", self._agent_key)
+            await asyncio.sleep(30)
         else:
-            log.info("[%s] Whitelist auto-approval skipped (AUTO_WHITELIST=false).", self._agent_key)
+            log.info("[%s] Waiting for account readiness (current=%s)...", self._agent_key, state)
 
-        # Q9: ERC-8004 Identity
-        if AUTO_IDENTITY or ADVANCED_MODE:
-            log.info("[%s] 🆔 Checking ERC-8004 Identity registration...", self._agent_key)
-            id_ok = await ensure_identity(self.api, d_dir)
-            if not id_ok:
-                log.warning("[%s] ⏳ Identity registration pending or failed. This may cause 4007 suspensions.", self._agent_key)
-                # Don't block the loop, but warn loudly
-        else:
-            log.info("[%s] Identity auto-registration disabled (AUTO_IDENTITY=false)", self._agent_key)
+    async def _handle_in_game(self, ctx: dict):
+        log.info("[%s] 🎮 Rejoining active game: %s", self._agent_key, ctx["game_id"])
+        # Same JoinEngine can rejoin
+        engine = JoinEngine(entry_type=ctx["entry_type"], mode="offchain", api_key=self.api_key)
+        engine.dashboard_key = self._agent_key
+        engine.dashboard_name = self._agent_name
+        await engine.run()
 
-        log.info("[%s] ✅ Full setup complete!", self._agent_key)
-
-    async def _handle_ready(self, me: dict, state: str):
-        """Join a game using v1.6.1 unified /ws/join socket.
-        Per skill.md Core Rule 1: one socket handles both join + gameplay.
-        """
-        from bot.game.ws_join import JoinEngine
-
-        # Fetch current rooms to check for paid availability
+    async def _handle_ready(self, me_data: dict, state: str):
+        # Decide room
+        from bot.game.room_selector import select_room
         rooms = []
         try:
-            rooms = await self.api.get_rooms()
+            rooms = await self.api.get_games_rooms()
         except:
             pass
 
-        room_type = select_room(me, rooms)
+        room_type = select_room(me_data, rooms)
         log.info("═══ JOINING GAME via /ws/join: type=%s ═══", room_type)
 
         # Feed dashboard
@@ -248,8 +114,6 @@ class Heartbeat:
             "status": "joining",
             "room_name": f"{room_type} room",
         })
-        dashboard_state.add_log(f"Joining {room_type} room via /ws/join...", "info",
-                                self._agent_key)
 
         # Set temp memory
         self.memory.set_temp_game("joining")
@@ -260,72 +124,25 @@ class Heartbeat:
         log.info("Starting JoinEngine (entry=%s, mode=%s)...", room_type, mode_to_use)
 
         # Ensure Identity is registered BEFORE JoinEngine (v1.6.2 requirement)
-        if not ctx.get("erc8004Id"):
-            log.info("[%s] 🆔 Identity missing in state — attempting registration...", self._agent_key)
+        if not me_data.get("erc8004Id"):
+            log.info("[%s] 🆔 Identity missing — attempting registration...", self._agent_key)
+            # Use data dir for session
+            d_dir = os.path.join(os.getcwd(), "session")
             await ensure_identity(self.api, d_dir)
 
-        # Run unified join + gameplay engine (v1.6.1)
+        # Run unified join + gameplay engine
         engine = JoinEngine(entry_type=room_type, mode=mode_to_use, api_key=self.api_key)
         engine.dashboard_key = self._agent_key
         engine.dashboard_name = self._agent_name
         game_result = await engine.run()
 
-        # Self-healing: if 1013 error detected, reset identity for next attempt
+        # Self-healing
         if engine.needs_identity_reset:
-            log.info("[%s] 🛠️ Self-Healing: Resetting identity to clear 1013 error...", self._agent_key)
-            try:
-                await self.api.delete_identity()
-                from bot.setup.identity import ensure_identity
-                d_dir = self._agent_key.replace("agent", "dev-agent") if self._agent_key != "agent-1" else "dev-agent"
-                await ensure_identity(self.api, d_dir)
-            except Exception as e:
-                log.error("[%s] Identity reset failed: %s", self._agent_key, e)
+            log.info("[%s] 🛠️ Self-Healing: Resetting identity...", self._agent_key)
+            d_dir = os.path.join(os.getcwd(), "session")
+            await ensure_identity(self.api, d_dir)
 
-        # Settle game result
-        await settle_game(game_result, room_type, self.memory)
-        log.info("Game complete. Starting next cycle in 5s...")
-        await asyncio.sleep(5)
-
-    async def _handle_in_game(self, ctx: dict):
-        """Resume or start playing an active game.
-        Per game-loop.md: always connect WS, even when dead.
-        Dead agents wait for game_ended inside the WS engine.
-        """
-        game_id = ctx["game_id"]
-        agent_id = ctx["agent_id"]
-        entry_type = ctx.get("entry_type", "free")
-
-        if not ctx.get("is_alive", True):
-            log.info("Agent is dead in game %s. Waiting for game to finish on server...", game_id)
-            await asyncio.sleep(60)
-            return
-
-        await self._play_game(game_id, agent_id, entry_type)
-
-    async def _play_game(self, game_id: str, agent_id: str, entry_type: str):
-        """Run the WebSocket gameplay engine."""
-        log.info("═══ PLAYING GAME: %s (type=%s) ═══", game_id, entry_type)
-
-        # Feed dashboard — use SAME key as heartbeat so no duplicate card
-        dashboard_state.update_agent(self._agent_key, {
-            "status": "playing",
-            "room_id": game_id,
-            "room_name": entry_type + " room",
-        })
-        dashboard_state.add_log(f"Joined {entry_type} game: {game_id[:12]}", "info", self._agent_key)
-
-        # Set temp memory for this game
-        self.memory.set_temp_game(game_id)
-        await self.memory.save()
-
-        # Run WebSocket engine — pass agent_key + name for dashboard
-        engine = WebSocketEngine(game_id, agent_id)
-        engine.dashboard_key = self._agent_key
-        engine.dashboard_name = self._agent_name
-        game_result = await engine.run()
-
-        # Settle
-        await settle_game(game_result, entry_type, self.memory)
-
-        log.info("Game complete. Starting next cycle in 5s...")
-        await asyncio.sleep(5)
+    async def _handle_no_identity(self):
+        log.info("[%s] 🆔 Missing ERC-8004 identity. Registering...", self._agent_key)
+        d_dir = os.path.join(os.getcwd(), "session")
+        await ensure_identity(self.api, d_dir)

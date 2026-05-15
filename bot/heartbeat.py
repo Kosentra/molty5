@@ -215,14 +215,14 @@ class Heartbeat:
             log.info("[%s] Whitelist auto-approval skipped (AUTO_WHITELIST=false).", self._agent_key)
 
         # Q9: ERC-8004 Identity
-        if AUTO_IDENTITY:
+        if AUTO_IDENTITY or ADVANCED_MODE:
+            log.info("[%s] 🆔 Checking ERC-8004 Identity registration...", self._agent_key)
             id_ok = await ensure_identity(self.api, d_dir)
             if not id_ok:
-                log.info("[%s] Identity registration pending. Will retry in 30s.", self._agent_key)
-                await asyncio.sleep(30)
-                return
+                log.warning("[%s] ⏳ Identity registration pending or failed. This may cause 4007 suspensions.", self._agent_key)
+                # Don't block the loop, but warn loudly
         else:
-            log.info("[%s] Identity auto-registration skipped (AUTO_IDENTITY=false)", self._agent_key)
+            log.info("[%s] Identity auto-registration disabled (AUTO_IDENTITY=false)", self._agent_key)
 
         log.info("[%s] ✅ Full setup complete!", self._agent_key)
 

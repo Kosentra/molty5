@@ -28,7 +28,7 @@ def _restore_from_env(data_dir: str = None) -> dict | None:
         parts = data_dir.split("-")
         if parts[-1].isdigit(): suffix = f"_{parts[-1]}"
             
-    api_key = os.getenv(f"API_KEY{suffix}")
+    api_key = os.getenv(f"API_KEY{suffix}") or os.getenv(f"API_KEY{suffix.replace('_', '')}")
     main_key = os.getenv("API_KEY", "")
     if suffix and suffix != "_1" and api_key == main_key and api_key != "": return None
     if not api_key and (not suffix or suffix == "_1"): api_key = main_key
@@ -90,8 +90,11 @@ async def run_first_run_intake(data_dir: str = None) -> dict:
         api_key = result.get("apiKey", "")
     except APIError as e:
         if e.code == "CONFLICT":
-            log.warning("[%s] ⚠️ CONFLICT (Name or Wallet taken). Retrying with NEW identity...", data_dir or "default")
-            await asyncio.sleep(2) # Small delay
+            log.warning("[%s] ⚠️ CONFLICT (Name/Wallet taken). Retrying with suffix...", data_dir or "default")
+            # Break loop: append random numbers if the base name is taken
+            new_name = f"{agent_name[:12]}-{random.randint(100, 999)}"
+            os.environ[f"AGENT_NAME{suffix}"] = new_name # Temporary override for retry
+            await asyncio.sleep(3)
             return await run_first_run_intake(data_dir)
         raise
     finally:

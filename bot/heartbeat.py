@@ -41,11 +41,6 @@ class Heartbeat:
 
     async def run(self):
         """Entry point — runs the heartbeat loop indefinitely."""
-        # Stagger start to avoid rate limits (0-10s)
-        delay = random.uniform(0, 10)
-        log.info("[%s] Staggering start (delay=%.1fs)...", self._agent_key, delay)
-        await asyncio.sleep(delay)
-
         log.info("═══════════════════════════════════════════")
         log.info("  MOLTY ROYALE AI AGENT — STARTING")
         log.info("═══════════════════════════════════════════")
@@ -181,8 +176,21 @@ class Heartbeat:
         owner_eoa = creds.get("owner_eoa", "")
         agent_eoa = creds.get("agent_wallet_address", "")
 
+        # Fallback to env if missing in credentials
         if not owner_eoa:
-            log.error("[%s] ❌ No Owner EOA found in credentials! Setup cannot proceed.", self._agent_key)
+            from bot.config import OWNER_EOA
+            owner_eoa = OWNER_EOA
+
+        if not owner_eoa:
+            log.info("[%s] 🆔 Handling NO_IDENTITY — Starting setup pipeline...", self._agent_key)
+            # Try to ensure account is fully ready again
+            from bot.setup.account_setup import ensure_account_ready
+            creds = await ensure_account_ready(d_dir)
+            owner_eoa = creds.get("owner_eoa", "")
+            agent_eoa = creds.get("agent_wallet_address", "")
+
+        if not owner_eoa:
+            log.error("[%s] ❌ No Owner EOA found. Please set OWNER_EOA in env.", self._agent_key)
             await asyncio.sleep(60)
             return
 

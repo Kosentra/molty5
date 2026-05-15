@@ -29,48 +29,14 @@ async def run_all():
     tg_notifier.start_all()
     await tg_notifier.send_message("🚀 <b>Multi-Agent System Booting...</b>")
 
-    # 3. Dynamic Scaling Logic
-    agent_configs = []
-    
-    # Kumpulkan semua index angka yang ditemukan di variabel mana pun
-    indices = set()
-    for k in all_keys:
-        m = re.search(r"(\d+)$", k)
-        if m:
-            indices.add(m.group(1))
-    
-    # Pastikan Agent 1 selalu ada
-    agent_configs.append({
+    # 3. Single Agent Mode (Simplified)
+    agent_configs = [{
         "key": os.getenv("API_KEY", ""),
         "name": os.getenv("AGENT_NAME", "Agent-1"),
         "id": "agent-1"
-    })
-
-    # Tambahkan agent lain berdasarkan index yang ditemukan
-    for idx in sorted(list(indices)):
-        if idx == "1": continue
-        
-        # Cari kombinasi apa pun: API_KEY_2, API_KEY2, AGENT_2_KEY, dll
-        key_val = (os.getenv(f"API_KEY_{idx}") or 
-                   os.getenv(f"API_KEY{idx}") or 
-                   os.getenv(f"AGENT_{idx}_API_KEY") or
-                   os.getenv(f"AGENT{idx}_API_KEY"))
-                   
-        name_val = (os.getenv(f"AGENT_NAME_{idx}") or 
-                    os.getenv(f"AGENT_NAME{idx}") or 
-                    os.getenv(f"AGENT_{idx}_NAME") or
-                    os.getenv(f"AGENT{idx}_NAME"))
-
-        if key_val or name_val:
-            log.info("➕ Detected Agent Index [%s]: Name=%s", idx, name_val or "Auto")
-            agent_configs.append({
-                "key": key_val or "",
-                "name": name_val or f"Agent-{idx}",
-                "id": f"agent-{idx}"
-            })
-
-    log.info("🚀 Final Scaling: Running %d independent agents.", len(agent_configs))
-    dashboard_state.bots_running = len(agent_configs)
+    }]
+    log.info("🚀 Running in Single-Agent mode.")
+    dashboard_state.bots_running = 1
 
     # 4. Start Heartbeats
     tasks = []

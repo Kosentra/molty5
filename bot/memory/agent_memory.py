@@ -33,35 +33,42 @@ DEFAULT_MEMORY = {
 class AgentMemory:
     """Read/write molty-royale-context.json with overall + temp sections."""
 
-    def __init__(self):
+    def __init__(self, agent_name: str = "agent-1"):
+        self.agent_name = agent_name
         self.data = dict(DEFAULT_MEMORY)
+        self.data["overall"]["identity"]["name"] = agent_name
         self._loaded = False
+        # Unique file per agent to prevent conflicts in multi-agent mode
+        safe_name = "".join([c if c.isalnum() else "_" for c in agent_name])
+        self.memory_file = MEMORY_DIR / f"molty-{safe_name}-context.json"
 
     async def load(self):
         """Load memory from disk. Create default if missing."""
         MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-        if MEMORY_FILE.exists():
+        if self.memory_file.exists():
             try:
-                raw = MEMORY_FILE.read_text(encoding="utf-8")
+                raw = self.memory_file.read_text(encoding="utf-8")
                 self.data = json.loads(raw)
                 self._loaded = True
-                log.info("Memory loaded: %d games, %d lessons",
+                log.info("[%s] Memory loaded: %d games, %d lessons",
+                         self.agent_name,
                          self.data["overall"]["history"]["totalGames"],
                          len(self.data["overall"]["history"]["lessons"]))
             except (json.JSONDecodeError, KeyError) as e:
-                log.warning("Memory file corrupt, using defaults: %s", e)
+                log.warning("[%s] Memory file corrupt, using defaults: %s", self.agent_name, e)
                 self.data = dict(DEFAULT_MEMORY)
+                self.data["overall"]["identity"]["name"] = self.agent_name
         else:
-            log.info("No memory file — starting fresh")
+            log.info("[%s] No memory file — starting fresh at %s", self.agent_name, self.memory_file)
 
     async def save(self):
         """Persist memory to disk."""
         MEMORY_DIR.mkdir(parents=True, exist_ok=True)
-        MEMORY_FILE.write_text(
+        self.memory_file.write_text(
             json.dumps(self.data, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
-        log.debug("Memory saved to %s", MEMORY_FILE)
+        log.debug("[%s] Memory saved to %s", self.agent_name, self.memory_file)
 
     def set_agent_name(self, name: str):
         self.data["overall"]["identity"]["name"] = name

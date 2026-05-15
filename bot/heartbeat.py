@@ -71,6 +71,11 @@ class Heartbeat:
             readiness = me.get("readiness", {})
             self._agent_key = readiness.get("walletAddress") or me.get("id") or self._agent_name
 
+        # Data directory for this specific agent
+        safe_name = "".join([c if c.isalnum() else "_" for c in self._agent_name])
+        # Use dashboard_key (agent-1, agent-2) to help credentials.py find the suffix
+        self.data_dir = os.path.join(os.getcwd(), f"dev-agent-{self._agent_key}")
+
         # 2. Determine state
         state, ctx = determine_state(me)
         log.info("[%s] State: %s", self._agent_key, state)
@@ -106,7 +111,7 @@ class Heartbeat:
             pass
 
         room_type = select_room(me_data, rooms)
-        log.info("═══ JOINING GAME via /ws/join: type=%s ═══", room_type)
+        log.info("[%s] ═══ JOINING GAME via /ws/join: type=%s ═══", self._agent_key, room_type)
 
         # Feed dashboard
         dashboard_state.update_agent(self._agent_key, {
@@ -121,14 +126,12 @@ class Heartbeat:
 
         # v1.6.1: Default to offchain for sMoltz usage (Path A)
         mode_to_use = "offchain" 
-        log.info("Starting JoinEngine (entry=%s, mode=%s)...", room_type, mode_to_use)
+        log.info("[%s] Starting JoinEngine (entry=%s, mode=%s)...", self._agent_key, room_type, mode_to_use)
 
         # Ensure Identity is registered BEFORE JoinEngine (v1.6.2 requirement)
         if not me_data.get("erc8004Id"):
             log.info("[%s] 🆔 Identity missing — attempting registration...", self._agent_key)
-            # Use data dir for session
-            d_dir = os.path.join(os.getcwd(), "session")
-            await ensure_identity(self.api, d_dir)
+            await ensure_identity(self.api, self.data_dir)
 
         # Run unified join + gameplay engine
         engine = JoinEngine(entry_type=room_type, mode=mode_to_use, api_key=self.api_key)
@@ -139,10 +142,8 @@ class Heartbeat:
         # Self-healing
         if engine.needs_identity_reset:
             log.info("[%s] 🛠️ Self-Healing: Resetting identity...", self._agent_key)
-            d_dir = os.path.join(os.getcwd(), "session")
-            await ensure_identity(self.api, d_dir)
+            await ensure_identity(self.api, self.data_dir)
 
     async def _handle_no_identity(self):
         log.info("[%s] 🆔 Missing ERC-8004 identity. Registering...", self._agent_key)
-        d_dir = os.path.join(os.getcwd(), "session")
-        await ensure_identity(self.api, d_dir)
+        await ensure_identity(self.api, self.data_dir)

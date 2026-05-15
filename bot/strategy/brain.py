@@ -10,7 +10,7 @@ v1.6.3: CLAW ROYALE REAPER PRO
 """
 import random
 from bot.utils.logger import get_logger
-from bot.config import AGENT_NAME
+from bot.config import AGENT_NAME, USE_AI_BRAIN
 
 log = get_logger(__name__)
 
@@ -83,21 +83,21 @@ def mark_facility_used(facility_id: str):
     if facility_id: _used_facilities.add(facility_id)
 
 # ── AI Brain Integration ─────────────────────────────────────────────
-async def decide_action(view: dict, can_act: bool) -> dict | None:
+async def decide_action(view: dict, can_act: bool, agent_name: str = "Agent") -> dict | None:
     """Main decision engine. Uses AI Brain (LLM) if enabled, else falls back to local rules."""
     if USE_AI_BRAIN:
         # Try AI Brain first (Strategic Layer)
         from bot.strategy.ai_brain import get_ai_decision
-        ai_decision = await get_ai_decision(view)
+        ai_decision = await get_ai_decision(view, agent_name)
         if ai_decision:
             # Basic validation of AI response
             if ai_decision.get("action"):
                 return ai_decision
 
     # Fallback to local rule-based brain (Tactical Layer)
-    return _decide_action_local(view, can_act)
+    return _decide_action_local(view, can_act, agent_name)
 
-def _decide_action_local(view: dict, can_act: bool) -> dict | None:
+def _decide_action_local(view: dict, can_act: bool, agent_name: str = "Agent") -> dict | None:
     """Original rule-based logic for fast, zero-latency fallback."""
     self_data = view.get("self", {})
     my_id = self_data.get("id")

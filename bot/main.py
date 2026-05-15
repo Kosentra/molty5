@@ -29,30 +29,20 @@ async def run_all():
     tg_notifier.start_all()
     await tg_notifier.send_message("🚀 <b>Multi-Agent System Booting...</b>")
 
-    # 3. Single Agent Mode (Simplified)
-    agent_configs = [{
-        "key": os.getenv("API_KEY", ""),
-        "name": os.getenv("AGENT_NAME", "Agent-1"),
-        "id": "agent-1"
-    }]
+    # 3. Single Agent Mode
+    api_key = os.getenv("API_KEY", "")
+    agent_name = os.getenv("AGENT_NAME", "Agent-1")
+    
     log.info("🚀 Running in Single-Agent mode.")
     dashboard_state.bots_running = 1
 
-    # 4. Start Heartbeats
-    tasks = []
-    for config in agent_configs:
-        hb = Heartbeat(
-            api_key=config["key"],
-            agent_name=config["name"],
-            dashboard_key=config["id"]
-        )
-        tasks.append(hb.run())
-
-    if tasks:
-        await asyncio.gather(*tasks)
-    else:
-        log.error("No agents found! Sleeping...")
-        while True: await asyncio.sleep(3600)
+    # 4. Start Heartbeat
+    hb = Heartbeat(
+        api_key=api_key,
+        agent_name=agent_name,
+        dashboard_key="agent-1"
+    )
+    await hb.run()
 
 def main():
     print("Starting Container")

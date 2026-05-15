@@ -11,7 +11,7 @@ log = get_logger(__name__)
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 
-async def get_ai_decision(view: dict) -> dict | None:
+async def get_ai_decision(view: dict, agent_name: str = "Agent") -> dict | None:
     """
     Send game view to LLM and get a strategic decision.
     Returns: { "action": "...", "data": {...}, "reason": "...", "thought": "..." }
@@ -24,7 +24,7 @@ async def get_ai_decision(view: dict) -> dict | None:
     summary = _prepare_view_summary(view)
     
     system_prompt = (
-        f"You are the strategic brain of '{AGENT_NAME}', an AI agent playing Claw Royale (v1.6.3).\n"
+        f"You are the strategic brain of '{agent_name}', an AI agent playing Claw Royale (v1.6.3).\n"
         "Your goal: Maximize $Moltz collection and survival. Be aggressive against weak players.\n\n"
         "Game Rules:\n"
         "- Move (2-3 EP), Attack (2 EP), Use Item (1 EP), Rest (0 EP).\n"

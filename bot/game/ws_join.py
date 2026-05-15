@@ -437,7 +437,7 @@ class JoinEngine:
 
         # Run strategy brain
         can_act = self.action_sender.can_send_cooldown_action()
-        decision = await decide_action(view, can_act)
+        decision = await decide_action(view, can_act, self.dashboard_name)
 
         if decision is None:
             return

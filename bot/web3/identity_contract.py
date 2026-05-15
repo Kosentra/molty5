@@ -25,10 +25,9 @@ async def register_identity_onchain(owner_private_key: str) -> int | None:
     """
     acct = Account.from_key(owner_private_key)
 
-    # Gas check FIRST — wait until funded
-    has_gas = await require_gas_or_wait_async(acct.address, "ERC-8004 Identity Registration")
-    if not has_gas:
-        return None
+    # v1.6.2: Identity gas is delegated/free. We skip the strict gas checker
+    # to allow the transaction to proceed even with 0 balance.
+    log.info("Proceeding with delegated identity registration...")
 
     try:
         w3 = get_w3()

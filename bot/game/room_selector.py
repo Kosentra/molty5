@@ -8,7 +8,7 @@ log = get_logger(__name__)
 def select_room(me_data: dict, rooms_data: list = None) -> str:
     """
     Determine which room type to join.
-    FORCED TO FREE ONLY.
+    FORCED TO PAID ONLY.
     """
-    log.info("Room mode: FORCED FREE ONLY (Security Policy)")
-    return "free"
+    log.info("Room mode: FORCED PAID ONLY (Security Policy)")
+    return "paid"

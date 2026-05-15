@@ -25,11 +25,11 @@ from bot.config import (
 log = get_logger(__name__)
 
 class Heartbeat:
-    def __init__(self, api_key: str, agent_name: str = "agent-1"):
+    def __init__(self, api_key: str, agent_name: str = "agent-1", dashboard_key: str = None):
         self.api_key = api_key
         self.api = MoltyAPI(api_key)
         self.running = True
-        self._agent_key = None  # Will be set based on wallet or name
+        self._agent_key = dashboard_key or agent_name  # Key for dashboard state
         self._agent_name = agent_name
         self.memory = AgentMemory(agent_name)
         self.retry_count = 0

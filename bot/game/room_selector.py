@@ -50,13 +50,13 @@ def select_room(me_data: dict) -> str:
 
     reasons = []
     if not wallet_ok:
-        reasons.append("no wallet")
+        reasons.append("walletAddress missing from readiness")
     if not whitelist_ok:
-        reasons.append("whitelist pending")
+        reasons.append("whitelistApproved is False")
     if balance < PAID_ENTRY_FEE_SMOLTZ:
-        reasons.append(f"balance={balance}/{PAID_ENTRY_FEE_SMOLTZ}")
+        reasons.append(f"insufficient balance: {balance}/{PAID_ENTRY_FEE_SMOLTZ}")
     if has_active_paid:
-        reasons.append("active paid game exists")
+        reasons.append("already in an active paid game")
 
-    log.info("Room mode: AUTO → FREE (%s)", ", ".join(reasons))
+    log.info("Room mode: AUTO → FREE. Reasons: %s", ", ".join(reasons))
     return "free"

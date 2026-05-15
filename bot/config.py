@@ -14,7 +14,7 @@ SKILL_VERSION = os.getenv("SKILL_VERSION", "1.6.2")  # Verified working on 2026-
 # ── URLs ──────────────────────────────────────────────────────────────
 API_BASE = "https://cdn.clawroyale.ai/api"
 WS_URL = "wss://cdn.clawroyale.ai/ws/agent"
-WS_JOIN_URL = "wss://cdn.clawroyale.ai/ws/join"  # v1.6.1: unified join socket
+WS_JOIN_URL = "wss://cdn.moltyroyale.com/ws/join"  # v1.6.1: unified join socket
 
 # ── Chain config (CROSS Mainnet) ──────────────────────────────────────
 CROSS_CHAIN_ID = 612055

@@ -150,9 +150,11 @@ class JoinEngine:
                 elif decision == "PAID_ONLY":
                     actual_entry = "paid"
 
-                hello = {"type": "hello", "entryType": actual_entry, "mode": self.mode}
+                hello = {"type": "hello", "entryType": actual_entry}
+                if actual_entry == "paid":
+                    hello["mode"] = self.mode
                 await self._send(hello)
-                log.info("Sent hello: entryType=%s mode=%s", actual_entry, self.mode)
+                log.info("Sent hello: %s", json.dumps(hello))
 
         # ── join state machine messages ───────────────────────────────
         elif msg_type == "queued":

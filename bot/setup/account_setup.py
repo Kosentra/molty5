@@ -61,9 +61,8 @@ async def run_first_run_intake(data_dir: str = None) -> dict:
             idx = int(parts[-1])
             suffix = f"_{idx}"
 
-    # FORCE UNIQUE NAME: Glueby -> Glueby-1234
-    base_name = os.getenv(f"AGENT_NAME{suffix}", os.getenv("AGENT_NAME", f"Agent-{idx}"))
-    agent_name = f"{base_name}-{random.randint(1000, 9999)}"
+    # Use existing name or env var
+    agent_name = os.getenv(f"AGENT_NAME{suffix}", os.getenv("AGENT_NAME", f"Agent-{idx}"))
     
     main_pk = os.getenv("AGENT_PRIVATE_KEY", "")
     agent_pk = os.getenv(f"AGENT_PRIVATE_KEY{suffix}", "")
@@ -112,8 +111,14 @@ async def run_first_run_intake(data_dir: str = None) -> dict:
 async def ensure_account_ready(data_dir: str = None) -> dict:
     creds = _restore_from_env(data_dir)
     if creds and creds.get("api_key"):
-        if not ADVANCED_MODE or creds.get("owner_eoa"):
-            return creds
+        # If API Key exists but Owner is missing in Advanced Mode, just fill it in
+        if ADVANCED_MODE and not creds.get("owner_eoa"):
+            log.info("[%s] API Key found but Owner EOA missing — generating missing pieces...", data_dir or "default")
+            owner_address, owner_pk = generate_owner_wallet()
+            save_owner_wallet(owner_address, owner_pk, data_dir)
+            creds["owner_eoa"] = owner_address
+            save_credentials(creds, data_dir)
+        return creds
     if not is_first_run(data_dir):
         creds = load_credentials(data_dir)
         if creds and creds.get("api_key"): return creds

@@ -66,11 +66,11 @@ OWNER_PRIVATE_KEY = os.getenv("OWNER_PRIVATE_KEY", "")
 # ── First-Run Intake answers (setup.md lines 29-39) ──────────────────
 # These replace the interactive yes/no prompts for Railway/Docker.
 # All default to "yes/auto" so zero-config deployment works.
-AUTO_WHITELIST = os.getenv("AUTO_WHITELIST", "true").lower() == "true"        # Q4: auto-check + approve
-AUTO_SC_WALLET = os.getenv("AUTO_SC_WALLET", "true").lower() == "true"       # Q6: auto-create SC wallet
-ENABLE_MEMORY = os.getenv("ENABLE_MEMORY", "true").lower() == "true"         # Q7: cross-game learning
-ENABLE_AGENT_TOKEN = os.getenv("ENABLE_AGENT_TOKEN", "false").lower() == "true"  # Q8: agent token
-AUTO_IDENTITY = os.getenv("AUTO_IDENTITY", "true").lower() == "true"         # Q9: ERC-8004 auto-register
+AUTO_WHITELIST = os.getenv("AUTO_WHITELIST", "false").lower() == "true"
+AUTO_SC_WALLET = os.getenv("AUTO_SC_WALLET", "false").lower() == "true"
+ENABLE_MEMORY = os.getenv("ENABLE_MEMORY", "true").lower() == "true"
+ENABLE_AGENT_TOKEN = os.getenv("ENABLE_AGENT_TOKEN", "false").lower() == "true"
+AUTO_IDENTITY = os.getenv("AUTO_IDENTITY", "false").lower() == "true"
 
 # ── Telegram Notifier ──────────────────────────────────────────────
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")

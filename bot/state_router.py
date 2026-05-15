@@ -36,11 +36,12 @@ def determine_state(me_response: dict) -> tuple[str, dict]:
                 "is_alive": game.get("isAlive", True),
             }
 
-    # Check ERC-8004 identity
+    # Check ERC-8004 identity (Warning only, don't block)
     erc8004_id = me_response.get("erc8004Id")
     if erc8004_id is None:
-        log.info("No ERC-8004 identity registered")
-        return NO_IDENTITY, {}
+        log.warning("No ERC-8004 identity reported by API — proceeding anyway")
+    else:
+        log.info("ERC-8004 identity found: %s", erc8004_id)
 
     # Check paid readiness
     if readiness.get("paidReady", False):
